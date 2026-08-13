@@ -36,9 +36,17 @@ await setPersistence(auth, browserLocalPersistence);
 // Parqueos siga mostrando el último estado conocido si se pierde la
 // conexión por un momento, sin arriesgar datos contradictorios entre
 // pestañas del mismo dispositivo.
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
-});
+// databaseId "seguridad-tpc": la base de datos de este proyecto no se creó
+// con el nombre "(default)" (Firebase ahora permite varias bases de datos
+// por proyecto), así que hay que indicar su nombre explícitamente o el SDK
+// intenta conectarse a una base "(default)" que no existe.
+export const db = initializeFirestore(
+  app,
+  {
+    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+  },
+  "seguridad-tpc"
+);
 
 // -----------------------------------------------------------------------
 // App secundaria — se usa EXCLUSIVAMENTE para que un administrador pueda
