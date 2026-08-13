@@ -10,31 +10,26 @@ rules_version = '2';
 // aquí, porque el servidor de Firebase evalúa este archivo en cada lectura y
 // escritura, sin excepción.
 //
-// Cada verificación de rol (isAdmin / isGuardActive) lee el documento
-// users/{uid} del usuario que hace la solicitud. Esa lectura consume 1 cuota
-// de "read" de Firestore — es un costo pequeño y esperado, ya explicado en
+// Cada verificación de rol lee el documento users/{uid} del usuario que hace
+// la solicitud (con get()). Esa lectura consume 1 cuota de "read" de
+// Firestore — es un costo pequeño y esperado, ya explicado en
 // docs/MODELO_DE_DATOS.md.
+//
+// IMPORTANTE — por qué get() está repetido en cada regla en vez de usar
+// funciones tipo isAdmin()/isStaff(): en este proyecto se comprobó
+// (13-ago-2026, ver historial) que get(/databases/$(database)/documents/...)
+// funciona correctamente cuando se escribe DIRECTAMENTE dentro de la
+// condición de un "allow", pero devuelve "Missing or insufficient
+// permissions" cuando se llama desde dentro de una función (con o sin
+// "let", con o sin anidar otra función) en esta base de datos. Es un
+// comportamiento inusual, pero reproducido de forma consistente en pruebas
+// controladas. Por eso el chequeo de rol se repite explícito en cada
+// "allow" en vez de reutilizar una función — no lo simplifiques con
+// funciones que llamen a get() sin volver a probarlo primero.
 // =============================================================================
 
 function isSignedIn() {
   return request.auth != null;
-}
-
-function profile() {
-  return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
-}
-
-function isActiveUser() {
-  return isSignedIn() && profile().active == true;
-}
-
-function isAdmin() {
-  return isActiveUser() && profile().role == 'admin';
-}
-
-// Cualquier usuario activo (admin o guardia) puede operar el día a día.
-function isStaff() {
-  return isActiveUser() && (profile().role == 'admin' || profile().role == 'guard');
 }
 
 function unchangedExcept(allowedKeys) {
@@ -52,9 +47,17 @@ service cloud.firestore {
     // excepción especial aquí que un guardia pudiera aprovechar para
     // auto-promoverse a administrador.
     match /users/{uid} {
-      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow update: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
       allow delete: if false; // nunca se borra un usuario, se desactiva (active:false)
     }
 
@@ -62,27 +65,42 @@ service cloud.firestore {
     // settings — configuración global (solo lectura para staff, escritura admin)
     // -------------------------------------------------------------------
     match /settings/{docId} {
-      allow read: if isStaff();
-      allow write: if isAdmin();
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
+      allow write: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     // -------------------------------------------------------------------
     // parking_spaces — estado en vivo de los 13 espacios
     // -------------------------------------------------------------------
     match /parking_spaces/{spaceId} {
-      allow read: if isStaff();
-      allow create: if isAdmin();
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
       allow delete: if false;
       // El guardia SOLO puede tocar los campos operativos de ocupar/liberar.
       // El tipo de parqueo (visitante/discapacidad/deshabilitado) es
       // exclusivamente administrativo.
-      allow update: if isAdmin() || (
-        isStaff() &&
-        unchangedExcept([
-          'status', 'sessionId', 'visitorName', 'visitorId', 'plate',
-          'destinationType', 'destinationNumber', 'entryAt',
-          'entryGuardName', 'entryLobby', 'maxMinutesAtEntry', 'updatedAt'
-        ])
+      allow update: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         unchangedExcept([
+           'status', 'sessionId', 'visitorName', 'visitorId', 'plate',
+           'destinationType', 'destinationNumber', 'entryAt',
+           'entryGuardName', 'entryLobby', 'maxMinutesAtEntry', 'updatedAt'
+         ]))
       );
     }
 
@@ -90,25 +108,33 @@ service cloud.firestore {
     // parking_sessions — historial permanente de entradas/salidas
     // -------------------------------------------------------------------
     match /parking_sessions/{sessionId} {
-      allow read: if isStaff();
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
       allow delete: if false;
 
-      allow create: if isStaff() &&
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
         request.resource.data.entryGuardUid == request.auth.uid &&
         request.resource.data.status == 'open' &&
         request.resource.data.exitAt == null;
 
       // Cierre normal (salida) hecho por cualquier guardia/admin activo.
       // Corrección posterior (cualquier campo) reservada a administración.
-      allow update: if isAdmin() || (
-        isStaff() &&
-        resource.data.status == 'open' &&
-        request.resource.data.status == 'closed' &&
-        request.resource.data.exitGuardUid == request.auth.uid &&
-        unchangedExcept([
-          'status', 'exitAt', 'exitGuardUid', 'exitGuardName',
-          'exitLobby', 'durationMinutes'
-        ])
+      allow update: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         resource.data.status == 'open' &&
+         request.resource.data.status == 'closed' &&
+         request.resource.data.exitGuardUid == request.auth.uid &&
+         unchangedExcept(['status', 'exitAt', 'exitGuardUid', 'exitGuardName', 'exitLobby', 'durationMinutes']))
       );
     }
 
@@ -116,19 +142,30 @@ service cloud.firestore {
     // packages
     // -------------------------------------------------------------------
     match /packages/{id} {
-      allow read: if isStaff();
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
       allow delete: if false;
 
-      allow create: if isStaff() &&
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
         request.resource.data.createdByUid == request.auth.uid &&
         request.resource.data.status == 'pending';
 
-      allow update: if isAdmin() || (
-        isStaff() &&
-        resource.data.status == 'pending' &&
-        request.resource.data.status == 'delivered' &&
-        request.resource.data.deliveredByUid == request.auth.uid &&
-        unchangedExcept(['status', 'deliveredAt', 'deliveredByUid', 'deliveredByName'])
+      allow update: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         resource.data.status == 'pending' &&
+         request.resource.data.status == 'delivered' &&
+         request.resource.data.deliveredByUid == request.auth.uid &&
+         unchangedExcept(['status', 'deliveredAt', 'deliveredByUid', 'deliveredByName']))
       );
     }
 
@@ -137,17 +174,25 @@ service cloud.firestore {
     // ajusta el guardia como efecto de un préstamo/devolución (+-1)
     // -------------------------------------------------------------------
     match /objects/{id} {
-      allow read: if isStaff();
-      allow create: if isAdmin();
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
       allow delete: if false;
 
-      allow update: if isAdmin() || (
-        isStaff() &&
-        unchangedExcept(['availableQuantity']) &&
-        (
-          request.resource.data.availableQuantity == resource.data.availableQuantity - 1 ||
-          request.resource.data.availableQuantity == resource.data.availableQuantity + 1
-        )
+      allow update: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         unchangedExcept(['availableQuantity']) &&
+         (request.resource.data.availableQuantity == resource.data.availableQuantity - 1 ||
+          request.resource.data.availableQuantity == resource.data.availableQuantity + 1))
       );
     }
 
@@ -155,22 +200,30 @@ service cloud.firestore {
     // object_loans
     // -------------------------------------------------------------------
     match /object_loans/{id} {
-      allow read: if isStaff();
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
       allow delete: if false;
 
-      allow create: if isStaff() &&
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
         request.resource.data.loanedByUid == request.auth.uid &&
         request.resource.data.status == 'loaned';
 
-      allow update: if isAdmin() || (
-        isStaff() &&
-        resource.data.status == 'loaned' &&
-        request.resource.data.status == 'returned' &&
-        request.resource.data.returnedByUid == request.auth.uid &&
-        unchangedExcept([
-          'status', 'returnedAt', 'returnedByUid', 'returnedByName',
-          'returnObservations', 'returnCondition'
-        ])
+      allow update: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         resource.data.status == 'loaned' &&
+         request.resource.data.status == 'returned' &&
+         request.resource.data.returnedByUid == request.auth.uid &&
+         unchangedExcept(['status', 'returnedAt', 'returnedByUid', 'returnedByName', 'returnObservations', 'returnCondition']))
       );
     }
 
@@ -178,16 +231,26 @@ service cloud.firestore {
     // access_items — tarjetas / stickers. El guardia SOLO marca "entregado".
     // -------------------------------------------------------------------
     match /access_items/{id} {
-      allow read: if isStaff();
-      allow create: if isAdmin();
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
       allow delete: if false;
 
-      allow update: if isAdmin() || (
-        isStaff() &&
-        resource.data.status == 'pending' &&
-        request.resource.data.status == 'delivered' &&
-        request.resource.data.deliveredByUid == request.auth.uid &&
-        unchangedExcept(['status', 'deliveredAt', 'deliveredByUid', 'deliveredByName', 'deliveredLobby'])
+      allow update: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         resource.data.status == 'pending' &&
+         request.resource.data.status == 'delivered' &&
+         request.resource.data.deliveredByUid == request.auth.uid &&
+         unchangedExcept(['status', 'deliveredAt', 'deliveredByUid', 'deliveredByName', 'deliveredLobby']))
       );
     }
 
@@ -196,8 +259,14 @@ service cloud.firestore {
     // lo identifique a sí mismo; nadie puede editar ni borrar auditoría.
     // -------------------------------------------------------------------
     match /audit_logs/{id} {
-      allow read: if isAdmin();
-      allow create: if isStaff() && request.resource.data.userUid == request.auth.uid;
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+        request.resource.data.userUid == request.auth.uid;
       allow update: if false;
       allow delete: if false;
     }
@@ -207,11 +276,24 @@ service cloud.firestore {
     // solo administración puede resolverlos.
     // -------------------------------------------------------------------
     match /error_reports/{id} {
-      allow read: if isAdmin() || (isStaff() && resource.data.reportedByUid == request.auth.uid);
-      allow create: if isStaff() &&
+      allow read: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         resource.data.reportedByUid == request.auth.uid)
+      );
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
         request.resource.data.reportedByUid == request.auth.uid &&
         request.resource.data.status == 'open';
-      allow update: if isAdmin();
+      allow update: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
       allow delete: if false;
     }
 
