@@ -1,0 +1,19 @@
+{
+  "name": "SEGURIDAD TPC — Torres Paseo Colón",
+  "short_name": "SEGURIDAD TPC",
+  "description": "Sistema interno de seguridad para Torres Paseo Colón — Lobby A y Lobby B.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef2f5",
+  "theme_color": "#2f6690",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "./icons/logo-placeholder.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

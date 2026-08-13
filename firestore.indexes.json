@@ -1,0 +1,53 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "parking_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "entryAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "parking_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "spaceNumber", "order": "ASCENDING" },
+        { "fieldPath": "entryAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "packages",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "object_loans",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "loanedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "access_items",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "error_reports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "reportedByUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

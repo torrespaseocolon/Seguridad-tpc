@@ -1,0 +1,132 @@
+import { subscribeAuth, logout, getProfile } from "./services/auth.service.js";
+import { subscribeConnectivity } from "./utils/connectivity.js";
+import { el, clear } from "./utils/dom.js";
+import { renderLogin } from "./pages/login.page.js";
+import { registerRoute, setRouteGuard, startRouter, navigate, currentPath } from "./router.js";
+
+import { renderHome } from "./pages/home.page.js";
+import { renderParking } from "./pages/parking.page.js";
+import { renderPackages } from "./pages/packages.page.js";
+import { renderObjects } from "./pages/objects.page.js";
+import { renderAccessItems } from "./pages/access-items.page.js";
+import { renderActivity } from "./pages/activity.page.js";
+import { renderAdmin } from "./pages/admin.page.js";
+
+const appRoot = document.getElementById("app-root");
+const offlineBanner = document.getElementById("offline-banner");
+
+let shellBuilt = false;
+let connBadgeEl = null;
+let sessionTimer = null;
+
+function buildShell() {
+  clear(appRoot);
+  const header = el("header", { class: "app-header" }, [
+    el("div", { class: "app-header__logo", id: "header-logo-slot" }, "TPC"),
+    el("div", { class: "app-header__titles" }, [
+      el("div", { class: "app-header__brand" }, "Torres Paseo Colón"),
+      el("div", { class: "app-header__system", id: "header-system-name" }, "Sistema de Seguridad"),
+    ]),
+    el("div", { class: "app-header__user", id: "header-user-info" }),
+  ]);
+
+  const main = el("main", { class: "app-main", id: "view-outlet" });
+
+  appRoot.appendChild(header);
+  appRoot.appendChild(main);
+  shellBuilt = true;
+}
+
+function updateHeaderUser(profile) {
+  const box = document.getElementById("header-user-info");
+  if (!box) return;
+  clear(box);
+  const roleLabel = profile.role === "admin" ? "Administrador" : "Guardia";
+  const lobbyLabel = profile.lobby ? `Lobby ${profile.lobby}` : "Sin lobby asignado";
+  connBadgeEl = el("span", { class: "conn-badge conn-badge--online" }, [
+    el("span", { class: "conn-dot" }),
+    "CONECTADO",
+  ]);
+  box.appendChild(el("div", {}, [el("strong", {}, profile.name), ` · ${roleLabel}`]));
+  box.appendChild(el("div", {}, lobbyLabel));
+  box.appendChild(el("div", { class: "row", style: "justify-content:flex-end; margin-top:4px;" }, [connBadgeEl]));
+  box.appendChild(
+    el(
+      "button",
+      { class: "btn btn--ghost", style: "min-height:32px; padding:4px 10px; font-size:14px;", onclick: onLogoutClick },
+      "Cerrar sesión"
+    )
+  );
+}
+
+async function onLogoutClick() {
+  await logout();
+}
+
+function updateConnBadge(online) {
+  if (offlineBanner) offlineBanner.classList.toggle("is-visible", !online);
+  if (!connBadgeEl) return;
+  connBadgeEl.className = `conn-badge conn-badge--${online ? "online" : "offline"}`;
+  connBadgeEl.innerHTML = "";
+  connBadgeEl.appendChild(el("span", { class: "conn-dot" }));
+  connBadgeEl.appendChild(document.createTextNode(online ? "CONECTADO" : "SIN CONEXIÓN"));
+}
+
+function registerRoutes() {
+  registerRoute("/", renderHome);
+  registerRoute("/parqueos", renderParking);
+  registerRoute("/paquetes", renderPackages);
+  registerRoute("/objetos", renderObjects);
+  registerRoute("/tarjetas", renderAccessItems);
+  registerRoute("/actividad", renderActivity);
+  registerRoute("/admin", renderAdmin);
+  registerRoute("/404", (root) => {
+    clear(root);
+    root.appendChild(el("div", { class: "empty-state" }, "Pantalla no encontrada."));
+  });
+
+  setRouteGuard((path) => {
+    const profile = getProfile();
+    if (!profile) return path;
+    if (path.startsWith("/admin") && profile.role !== "admin") return "/";
+    return null;
+  });
+}
+
+let routerStarted = false;
+
+subscribeAuth((state) => {
+  if (!state) {
+    shellBuilt = false;
+    clear(appRoot);
+    renderLogin(appRoot);
+    return;
+  }
+  if (state.error) {
+    shellBuilt = false;
+    clear(appRoot);
+    renderLogin(appRoot);
+    // Se muestra el error de perfil dentro de la pantalla de login.
+    const errBox = document.querySelector(".form-error");
+    if (errBox) {
+      errBox.textContent = state.error;
+      errBox.style.display = "block";
+    }
+    return;
+  }
+
+  const { profile } = state;
+  if (!shellBuilt) buildShell();
+  updateHeaderUser(profile);
+
+  if (!routerStarted) {
+    registerRoutes();
+    startRouter();
+    routerStarted = true;
+  } else {
+    // Si veníamos del login, aseguramos ir a la pantalla principal.
+    if (currentPath() === "/" || !currentPath()) navigate("/");
+  }
+});
+
+subscribeConnectivity(updateConnBadge);

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>SEGURIDAD TPC — Torres Paseo Colón</title>
+  <meta name="description" content="Sistema interno de seguridad para Torres Paseo Colón — Lobby A y Lobby B." />
+  <meta name="theme-color" content="#2f6690" />
+
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" href="./icons/logo-placeholder.svg" />
+  <link rel="apple-touch-icon" href="./icons/logo-placeholder.svg" />
+
+  <link rel="stylesheet" href="./src/styles/main.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="offline-banner" class="offline-banner">🔴 SIN CONEXIÓN — Los cambios no se guardarán hasta que vuelva la señal</div>
+    <div id="app-root"></div>
+  </div>
+  <div id="toast-region"></div>
+
+  <script type="module">
+    import("./src/app.js").catch((err) => {
+      console.error("[SEGURIDAD TPC] Error al iniciar la aplicación:", err);
+      document.getElementById("app-root").innerHTML = `
+        <div class="login-screen">
+          <div class="login-card">
+            <div class="card">
+              <div class="alert alert--danger" style="margin-bottom:0;">
+                No se pudo iniciar la aplicación.<br /><br />
+                ${err && err.message ? err.message : "Ocurrió un error inesperado."}
+              </div>
+            </div>
+          </div>
+        </div>`;
+    });
+  </script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./service-worker.js").catch((err) => {
+          console.error("[SEGURIDAD TPC] No se pudo registrar el service worker:", err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

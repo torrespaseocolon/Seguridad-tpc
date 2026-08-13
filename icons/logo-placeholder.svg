@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!--
+    MARCADOR TEMPORAL — este NO es el logo oficial de Torres Paseo Colón.
+    Cuando tengas el archivo de logo real, reemplaza este SVG (o los PNG
+    de icons/icon-192.png y icons/icon-512.png) siguiendo las instrucciones
+    del manual, sección "Actualizaciones futuras > Cambiar el logo".
+  -->
+  <rect width="512" height="512" rx="96" fill="#2f6690"/>
+  <text x="256" y="290" font-family="-apple-system,Segoe UI,Roboto,Arial,sans-serif" font-size="180" font-weight="700" fill="#ffffff" text-anchor="middle">TPC</text>
+</svg>
