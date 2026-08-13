@@ -58,9 +58,16 @@ export function renderLogin(root) {
     ]
   );
 
+  const logoImg = el("img", {
+    src: "./icons/logo.png",
+    alt: "Logo Torres Paseo Colón",
+    style: "width:100%; height:100%; object-fit:contain; border-radius:inherit;",
+    onerror: (e) => e.target.replaceWith(document.createTextNode("LOGO TPC")),
+  });
+
   const screen = el("div", { class: "login-screen" }, [
     el("div", { class: "login-card" }, [
-      el("div", { class: "login-logo", id: "login-logo-slot" }, "LOGO TPC"),
+      el("div", { class: "login-logo", id: "login-logo-slot" }, [logoImg]),
       el("div", { class: "login-title" }, [
         el("h1", {}, "TORRES PASEO COLÓN"),
         el("p", {}, "Sistema de Seguridad — Lobby A / Lobby B"),

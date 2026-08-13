@@ -21,8 +21,14 @@ let sessionTimer = null;
 
 function buildShell() {
   clear(appRoot);
+  const headerLogoImg = el("img", {
+    src: "./icons/logo.png",
+    alt: "Logo Torres Paseo Colón",
+    style: "width:100%; height:100%; object-fit:contain; border-radius:inherit;",
+    onerror: (e) => e.target.replaceWith(document.createTextNode("TPC")),
+  });
   const header = el("header", { class: "app-header" }, [
-    el("div", { class: "app-header__logo", id: "header-logo-slot" }, "TPC"),
+    el("div", { class: "app-header__logo", id: "header-logo-slot" }, [headerLogoImg]),
     el("div", { class: "app-header__titles" }, [
       el("div", { class: "app-header__brand" }, "Torres Paseo Colón"),
       el("div", { class: "app-header__system", id: "header-system-name" }, "Sistema de Seguridad"),
