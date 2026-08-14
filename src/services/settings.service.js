@@ -46,7 +46,6 @@ export async function initializeSystem() {
   batch.set(doc(db, "settings", "general"), {
     orgName: "TORRES PASEO COLÓN",
     systemName: "SEGURIDAD TPC",
-    maxParkingMinutes: 120,
     logoUrl: "",
     initialized: true,
     updatedAt: serverTimestamp(),

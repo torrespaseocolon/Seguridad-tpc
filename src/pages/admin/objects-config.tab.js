@@ -1,10 +1,11 @@
 import { el, clear, toast, openModal, loadingState } from "../../utils/dom.js";
+import { icon } from "../../utils/icons.js";
 import { fetchAllObjects, createObject, updateObject, setObjectActive } from "../../services/objects.service.js";
 import { friendlyError } from "../../utils/errors.js";
 
 export async function renderObjectsConfigTab(root) {
   clear(root);
-  root.appendChild(el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openCreateModal(load) }, "+ CREAR OBJETO"));
+  root.appendChild(el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openCreateModal(load) }, [icon("plus", { size: 18 }), " CREAR OBJETO"]));
   const list = el("div", { class: "stack" });
   root.appendChild(list);
 

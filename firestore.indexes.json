@@ -17,6 +17,15 @@
       ]
     },
     {
+      "collectionGroup": "parking_sessions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "destinationType", "order": "ASCENDING" },
+        { "fieldPath": "destinationNumber", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "packages",
       "queryScope": "COLLECTION",
       "fields": [

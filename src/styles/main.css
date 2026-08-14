@@ -12,11 +12,24 @@ body {
   color: var(--color-text);
   background: var(--color-background);
   -webkit-font-smoothing: antialiased;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 h1, h2, h3, p { margin: 0; }
 button { font-family: inherit; }
 img { max-width: 100%; display: block; }
 a { color: inherit; }
+
+/* =========================================================================
+   Íconos SVG en línea (reemplazan los emojis)
+   ========================================================================= */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.icon svg { display: block; }
 
 /* =========================================================================
    Layout general
@@ -26,6 +39,7 @@ a { color: inherit; }
 .app-header {
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--shadow-header);
   padding: var(--space-md);
   display: flex;
   align-items: center;
@@ -34,6 +48,20 @@ a { color: inherit; }
   top: 0;
   z-index: 20;
 }
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.theme-toggle:hover { color: var(--color-primary); border-color: var(--color-primary); }
 .app-header__logo {
   width: 44px;
   height: 44px;
@@ -163,7 +191,16 @@ a { color: inherit; }
   text-align: center;
 }
 .menu-tile:active { transform: scale(0.98); }
-.menu-tile__icon { font-size: 34px; line-height: 1; }
+.menu-tile__icon {
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .menu-tile__label { font-size: var(--font-size-base); font-weight: var(--font-weight-bold); }
 .menu-tile__badge {
   font-size: var(--font-size-sm);
@@ -302,6 +339,7 @@ select.form-control { appearance: none; }
   .modal-backdrop { align-items: center; padding: var(--space-md); }
 }
 .modal {
+  position: relative;
   background: var(--color-surface);
   width: 100%;
   max-width: 480px;
@@ -314,8 +352,28 @@ select.form-control { appearance: none; }
 @media (min-width: 640px) {
   .modal { border-radius: var(--radius-lg); }
 }
-.modal__title { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); margin-bottom: var(--space-sm); }
+.modal__title { font-size: var(--font-size-lg); font-weight: var(--font-weight-bold); margin-bottom: var(--space-sm); padding-right: 36px; }
 .modal__body { color: var(--color-text-secondary); margin-bottom: var(--space-md); }
+.modal__close {
+  position: absolute;
+  top: var(--space-md);
+  right: var(--space-md);
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-background);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  z-index: 1;
+}
+.modal__close:hover { color: var(--color-danger); }
+
+/* Punto de estado (reemplaza los emojis de color en los badges) */
+.status-dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
 /* =========================================================================
    Estados de carga / vacío
@@ -334,7 +392,7 @@ select.form-control { appearance: none; }
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-.empty-state__icon { font-size: 40px; margin-bottom: var(--space-sm); }
+.empty-state__icon { display: flex; align-items: center; justify-content: center; margin: 0 auto var(--space-sm); color: var(--color-text-faint); }
 
 /* =========================================================================
    Utilidades

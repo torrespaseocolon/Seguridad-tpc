@@ -1,6 +1,8 @@
 import { subscribeAuth, logout, getProfile } from "./services/auth.service.js";
 import { subscribeConnectivity } from "./utils/connectivity.js";
 import { el, clear } from "./utils/dom.js";
+import { icon } from "./utils/icons.js";
+import { initTheme, getStoredTheme, cycleTheme } from "./utils/theme.js";
 import { renderLogin } from "./pages/login.page.js";
 import { registerRoute, setRouteGuard, startRouter, navigate, currentPath } from "./router.js";
 
@@ -15,9 +17,33 @@ import { renderAdmin } from "./pages/admin.page.js";
 const appRoot = document.getElementById("app-root");
 const offlineBanner = document.getElementById("offline-banner");
 
+initTheme();
+
 let shellBuilt = false;
 let connBadgeEl = null;
 let sessionTimer = null;
+
+function themeToggleIcon(theme) {
+  return theme === "dark" ? "moon" : theme === "light" ? "sun" : "sun";
+}
+
+function buildThemeToggle() {
+  const btn = el(
+    "button",
+    {
+      type: "button",
+      class: "theme-toggle",
+      title: "Cambiar tema (claro / oscuro / según el sistema)",
+      onclick: () => {
+        const next = cycleTheme();
+        clear(btn);
+        btn.appendChild(icon(themeToggleIcon(next), { size: 20 }));
+      },
+    },
+    [icon(themeToggleIcon(getStoredTheme()), { size: 20 })]
+  );
+  return btn;
+}
 
 function buildShell() {
   clear(appRoot);
@@ -33,6 +59,7 @@ function buildShell() {
       el("div", { class: "app-header__brand" }, "Torres Paseo Colón"),
       el("div", { class: "app-header__system", id: "header-system-name" }, "Sistema de Seguridad"),
     ]),
+    buildThemeToggle(),
     el("div", { class: "app-header__user", id: "header-user-info" }),
   ]);
 
@@ -60,7 +87,7 @@ function updateHeaderUser(profile) {
     el(
       "button",
       { class: "btn btn--ghost", style: "min-height:32px; padding:4px 10px; font-size:14px;", onclick: onLogoutClick },
-      "Cerrar sesión"
+      [icon("logout", { size: 16 }), " Cerrar sesión"]
     )
   );
 }

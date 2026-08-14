@@ -1,4 +1,4 @@
-// Indicador simple de conexión (🟢 CONECTADO / 🔴 SIN CONEXIÓN). Se apoya en
+// Indicador simple de conexión (CONECTADO / SIN CONEXIÓN). Se apoya en
 // los eventos nativos del navegador — no genera ninguna consulta a
 // Firebase, así que no tiene costo de cuota.
 export function subscribeConnectivity(callback) {

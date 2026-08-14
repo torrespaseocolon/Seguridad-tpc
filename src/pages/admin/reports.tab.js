@@ -1,4 +1,5 @@
 import { el, clear, loadingState, toast } from "../../utils/dom.js";
+import { icon } from "../../utils/icons.js";
 import { fetchParkingHistory } from "../../services/parking.service.js";
 import { fetchPackageHistory } from "../../services/packages.service.js";
 import { fetchLoanHistory } from "../../services/objects.service.js";
@@ -136,5 +137,5 @@ function exportButton(filename, rows) {
       }
       downloadCsv(filename, rows);
     },
-  }, "⬇ Exportar CSV");
+  }, [icon("download", { size: 18 }), " Exportar CSV"]);
 }

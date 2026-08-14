@@ -1,4 +1,5 @@
 import { el, clear, loadingState } from "../../utils/dom.js";
+import { icon } from "../../utils/icons.js";
 import { db } from "../../firebase/firebase-init.js";
 import {
   collection,
@@ -40,14 +41,14 @@ export async function renderDashboardTab(root) {
     clear(root);
     root.appendChild(
       el("div", { class: "menu-grid" }, [
-        statTile("🅿️", `${occupied} / ${spaces.length}`, "Parqueos ocupados"),
-        statTile("🟢", String(free), "Parqueos libres"),
-        statTile("⚠️", String(overdue), "Vehículos excedidos", overdue > 0),
-        statTile("📦", String(packagesCount.data().count), "Paquetes pendientes"),
-        statTile("🧰", String(loansCount.data().count), "Objetos prestados"),
-        statTile("💳", String(accessCount.data().count), "Tarjetas/stickers pendientes"),
-        statTile("🅰️", String(lobbyA), "Ocupados — Lobby A"),
-        statTile("🅱️", String(lobbyB), "Ocupados — Lobby B"),
+        statTile("parking", `${occupied} / ${spaces.length}`, "Parqueos ocupados"),
+        statTile("check", String(free), "Parqueos libres"),
+        statTile("warning", String(overdue), "Vehículos excedidos", overdue > 0),
+        statTile("package", String(packagesCount.data().count), "Paquetes pendientes"),
+        statTile("tools", String(loansCount.data().count), "Objetos prestados"),
+        statTile("card", String(accessCount.data().count), "Tarjetas/stickers pendientes"),
+        statTileText("A", String(lobbyA), "Ocupados — Lobby A"),
+        statTileText("B", String(lobbyB), "Ocupados — Lobby B"),
       ])
     );
 
@@ -83,10 +84,19 @@ export async function renderDashboardTab(root) {
   }
 }
 
-function statTile(icon, value, label, alert = false) {
+function statTile(iconName, value, label, alert = false) {
   return el("div", { class: "card text-center", style: alert ? "border-color:var(--color-danger);" : "" }, [
-    el("div", { style: "font-size:28px;" }, icon),
-    el("div", { style: `font-size:var(--font-size-xl); font-weight:700; ${alert ? "color:var(--color-danger);" : ""}` }, value),
+    el("div", { style: `color:${alert ? "var(--color-danger)" : "var(--color-primary)"}; display:flex; justify-content:center;` }, [icon(iconName, { size: 28 })]),
+    el("div", { style: `font-size:var(--font-size-xl); font-weight:700; margin-top:4px; ${alert ? "color:var(--color-danger);" : ""}` }, value),
+    el("div", { class: "text-secondary" }, label),
+  ]);
+}
+
+/** Variante sin ícono, para las estadísticas de Lobby A / Lobby B (una letra). */
+function statTileText(letter, value, label) {
+  return el("div", { class: "card text-center" }, [
+    el("div", { style: "font-size:28px; font-weight:700; color:var(--color-primary);" }, letter),
+    el("div", { style: "font-size:var(--font-size-xl); font-weight:700; margin-top:4px;" }, value),
     el("div", { class: "text-secondary" }, label),
   ]);
 }

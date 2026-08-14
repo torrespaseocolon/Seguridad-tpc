@@ -1,13 +1,20 @@
 import { el, clear, toast, loadingState, confirmDialog } from "../../utils/dom.js";
+import { icon } from "../../utils/icons.js";
 import { db } from "../../firebase/firebase-init.js";
 import { collection, getDocs, orderBy, query } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
-import { updateSpaceType, forceReleaseSpace } from "../../services/parking.service.js";
-import { getSettings, updateSettings, initializeSystem } from "../../services/settings.service.js";
+import {
+  updateSpaceType,
+  forceReleaseSpace,
+  MAX_MINUTES_OFFICE,
+  MAX_MINUTES_APARTMENT,
+  MAX_SIMULTANEOUS_PER_DESTINATION,
+} from "../../services/parking.service.js";
+import { getSettings, initializeSystem } from "../../services/settings.service.js";
 import { friendlyError } from "../../utils/errors.js";
 
 const TYPE_OPTIONS = [
   { value: "visitor", label: "Visitante" },
-  { value: "disability", label: "♿ Discapacidad" },
+  { value: "disability", label: "Discapacidad" },
   { value: "disabled", label: "Fuera de servicio" },
 ];
 
@@ -44,30 +51,24 @@ export async function renderParkingConfigTab(root) {
 
   clear(root);
 
-  const maxMinutesInput = el("input", { class: "form-control", type: "number", min: "5", value: settings.maxParkingMinutes });
   root.appendChild(
     el("div", { class: "card mb-md" }, [
-      el("div", { class: "card__title" }, "Tiempo máximo permitido"),
-      el("div", { class: "row" }, [
-        maxMinutesInput,
-        el("button", {
-          class: "btn btn--primary",
-          onclick: async () => {
-            const value = parseInt(maxMinutesInput.value, 10);
-            if (!value || value < 1) {
-              toast("Ingrese un número de minutos válido.", "danger");
-              return;
-            }
-            try {
-              await updateSettings({ maxParkingMinutes: value });
-              toast("Límite actualizado. Aplica a partir de la próxima entrada registrada.", "success");
-            } catch (err) {
-              toast(friendlyError(err), "danger");
-            }
-          },
-        }, "Guardar"),
+      el("div", { class: "card__title row" }, [icon("info"), "Reglas de tiempo (automáticas)"]),
+      el("div", { class: "stack", style: "gap:6px;" }, [
+        el("div", { class: "row row--between" }, [
+          el("span", { class: "text-secondary" }, "Apartamentos"),
+          el("strong", {}, `${MAX_MINUTES_APARTMENT / 60} horas`),
+        ]),
+        el("div", { class: "row row--between" }, [
+          el("span", { class: "text-secondary" }, "Oficinas / comercios"),
+          el("strong", {}, `${MAX_MINUTES_OFFICE / 60} horas`),
+        ]),
+        el("div", { class: "row row--between" }, [
+          el("span", { class: "text-secondary" }, "Máx. parqueos simultáneos por apartamento/oficina"),
+          el("strong", {}, String(MAX_SIMULTANEOUS_PER_DESTINATION)),
+        ]),
       ]),
-      el("div", { class: "form-hint" }, "Minutos. Los vehículos que ya están dentro conservan el límite que tenían al momento de entrar."),
+      el("div", { class: "form-hint mt-md" }, "Estas reglas las aplica el sistema automáticamente al registrar cada entrada, según el tipo de destino. No se configuran manualmente."),
     ])
   );
 
@@ -99,7 +100,10 @@ export async function renderParkingConfigTab(root) {
 
     const row = [
       el("strong", { style: "min-width:90px; display:inline-block;" }, `Parqueo ${space.number}`),
-      el("span", { class: `badge ${space.status === "free" ? "badge--free" : "badge--occupied"}` }, space.status === "free" ? "LIBRE" : "OCUPADO"),
+      el("span", { class: `badge ${space.status === "free" ? "badge--free" : "badge--occupied"}` }, [
+        el("span", { class: "status-dot" }),
+        space.status === "free" ? "LIBRE" : "OCUPADO",
+      ]),
       typeSelect,
       saveBtn,
     ];

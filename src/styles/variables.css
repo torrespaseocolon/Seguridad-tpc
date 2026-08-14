@@ -9,6 +9,11 @@
  * Para cambiar colores, logo o nombre en el futuro, este es el ÚNICO
  * archivo que normalmente necesitas tocar (ver README, sección
  * "Actualizaciones futuras").
+ *
+ * Modo oscuro: por defecto sigue la configuración del dispositivo
+ * (prefers-color-scheme). Si el usuario elige un modo manualmente con el
+ * botón de tema, se fuerza con el atributo data-theme en <html> — ver
+ * src/utils/theme.js.
  */
 :root {
   /* ---- Identidad Torres Paseo Colón (tomada del sitio HAC) ---- */
@@ -17,6 +22,7 @@
   --color-primary-light: #eaf2f8;
   --color-background: #eef2f5;
   --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
   --color-text: #1c2b36;
   --color-text-secondary: #5a6b78;
   --color-text-faint: #94a3ad;
@@ -53,18 +59,84 @@
   --space-lg: 24px;
   --space-xl: 32px;
 
-  /* ---- Bordes y sombras (siguiendo el lenguaje visual del sitio HAC) ---- */
+  /* ---- Bordes y sombras ---- */
   --radius-sm: 10px;
   --radius-md: 14px;
   --radius-lg: 18px;
   --shadow-card: 0 1px 2px rgba(16, 33, 48, 0.04), 0 12px 30px rgba(16, 33, 48, 0.08);
   --shadow-button: 0 6px 14px rgba(47, 102, 144, 0.22);
+  --shadow-header: 0 1px 0 rgba(16, 33, 48, 0.06);
 
   /* ---- Tamaños táctiles (botones grandes, fáciles de presionar) ---- */
   --touch-target-min: 56px;
   --touch-target-lg: 72px;
+
+  color-scheme: light;
 }
 
-/* Preparado para modo oscuro si en el futuro se decide ofrecerlo.
-   Por ahora la app usa siempre el tema claro, que es el que da mejor
-   contraste bajo luz de lobby/exterior. */
+/* Modo oscuro automático (según el sistema), salvo que el usuario haya
+   forzado el modo claro con el botón de tema (data-theme="light"). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-primary: #6ea8d8;
+    --color-primary-dark: #4a8fc2;
+    --color-primary-light: #1c3348;
+    --color-background: #0f1620;
+    --color-surface: #17212c;
+    --color-surface-raised: #1d2934;
+    --color-text: #e7edf2;
+    --color-text-secondary: #a3b2bd;
+    --color-text-faint: #6d7c88;
+    --color-border: #2a3742;
+
+    --color-success: #4cbf88;
+    --color-success-bg: #123527;
+    --color-warning: #e0ad3f;
+    --color-warning-bg: #3a2c0d;
+    --color-danger: #e3685f;
+    --color-danger-bg: #3c1917;
+    --color-info: #6ea8d8;
+    --color-info-bg: #1c3348;
+    --color-disability: #b596e0;
+    --color-disability-bg: #2b2140;
+    --color-disabled: #8b98a3;
+    --color-disabled-bg: #232d36;
+
+    --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 30px rgba(0, 0, 0, 0.35);
+    --shadow-button: 0 6px 14px rgba(0, 0, 0, 0.4);
+    --shadow-header: 0 1px 0 rgba(0, 0, 0, 0.4);
+    color-scheme: dark;
+  }
+}
+
+/* Modo oscuro forzado manualmente (botón de tema), sin importar el sistema. */
+:root[data-theme="dark"] {
+  --color-primary: #6ea8d8;
+  --color-primary-dark: #4a8fc2;
+  --color-primary-light: #1c3348;
+  --color-background: #0f1620;
+  --color-surface: #17212c;
+  --color-surface-raised: #1d2934;
+  --color-text: #e7edf2;
+  --color-text-secondary: #a3b2bd;
+  --color-text-faint: #6d7c88;
+  --color-border: #2a3742;
+
+  --color-success: #4cbf88;
+  --color-success-bg: #123527;
+  --color-warning: #e0ad3f;
+  --color-warning-bg: #3a2c0d;
+  --color-danger: #e3685f;
+  --color-danger-bg: #3c1917;
+  --color-info: #6ea8d8;
+  --color-info-bg: #1c3348;
+  --color-disability: #b596e0;
+  --color-disability-bg: #2b2140;
+  --color-disabled: #8b98a3;
+  --color-disabled-bg: #232d36;
+
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 30px rgba(0, 0, 0, 0.35);
+  --shadow-button: 0 6px 14px rgba(0, 0, 0, 0.4);
+  --shadow-header: 0 1px 0 rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}

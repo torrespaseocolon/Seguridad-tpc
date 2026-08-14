@@ -1,11 +1,12 @@
 import { el, clear, toast, openModal, loadingState } from "../../utils/dom.js";
+import { icon } from "../../utils/icons.js";
 import { createAccessItem, fetchAccessItemHistory, TYPE_LABELS } from "../../services/access-items.service.js";
 import { formatDateTime } from "../../utils/time.js";
 import { friendlyError } from "../../utils/errors.js";
 
 export async function renderAccessItemsAdminTab(root) {
   clear(root);
-  root.appendChild(el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openCreateModal(load) }, "+ REGISTRAR TARJETA / STICKER"));
+  root.appendChild(el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openCreateModal(load) }, [icon("plus", { size: 18 }), " REGISTRAR TARJETA / STICKER"]));
   const list = el("div", { class: "stack" });
   root.appendChild(list);
 

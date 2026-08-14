@@ -1,4 +1,5 @@
 import { el, clear, toast, confirmDialog, openModal, loadingState, emptyState } from "../utils/dom.js";
+import { icon } from "../utils/icons.js";
 import { createPackage, fetchPendingPackages, deliverPackage } from "../services/packages.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
@@ -10,14 +11,14 @@ export function renderPackages(root) {
 
   root.appendChild(
     el("div", { class: "back-bar" }, [
-      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, "← Menú"),
-      el("h2", {}, "📦 Paquetes"),
+      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
+      el("h2", { class: "row" }, [icon("package"), "Paquetes"]),
     ])
   );
   root.appendChild(
     el("div", { class: "row", style: "margin-bottom:16px;" }, [
-      el("button", { class: "btn btn--primary grow", onclick: () => openNewPackageModal(load) }, "+ NUEVO PAQUETE"),
-      el("button", { class: "btn btn--secondary", onclick: load }, "↻ Actualizar"),
+      el("button", { class: "btn btn--primary grow", onclick: () => openNewPackageModal(load) }, [icon("plus", { size: 18 }), " NUEVO PAQUETE"]),
+      el("button", { class: "btn btn--secondary", onclick: load }, [icon("refresh", { size: 18 }), " Actualizar"]),
     ])
   );
   root.appendChild(list);
@@ -29,13 +30,13 @@ export function renderPackages(root) {
       const packages = await fetchPendingPackages();
       clear(list);
       if (packages.length === 0) {
-        list.appendChild(emptyState("📦", "No hay paquetes pendientes de entrega."));
+        list.appendChild(emptyState("package", "No hay paquetes pendientes de entrega."));
         return;
       }
       for (const pkg of packages) list.appendChild(renderPackageCard(pkg, load));
     } catch (err) {
       clear(list);
-      list.appendChild(emptyState("⚠️", friendlyError(err)));
+      list.appendChild(emptyState("warning", friendlyError(err)));
     }
   }
 

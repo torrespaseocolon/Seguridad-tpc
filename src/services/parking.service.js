@@ -9,13 +9,28 @@ import {
   serverTimestamp,
   updateDoc,
   getDocs,
+  getCountFromServer,
   where,
   limit as fbLimit,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { getProfile } from "./auth.service.js";
-import { getSettings } from "./settings.service.js";
 import { logAudit } from "./audit.service.js";
 import { elapsedMinutes } from "../utils/time.js";
+
+// -----------------------------------------------------------------------
+// Reglas de tiempo máximo por tipo de destino (requisito de la Junta
+// Directiva, ago-2026): ya no las configura el administrador — el sistema
+// las aplica automáticamente según a dónde va el visitante. También se
+// limita cuántos parqueos de visita puede tener EN USO al mismo tiempo un
+// mismo apartamento/oficina, para evitar abuso del espacio compartido.
+// -----------------------------------------------------------------------
+export const MAX_MINUTES_OFFICE = 6 * 60; // 6 horas — oficinas y comercios
+export const MAX_MINUTES_APARTMENT = 24 * 60; // 24 horas — apartamentos
+export const MAX_SIMULTANEOUS_PER_DESTINATION = 3;
+
+function maxMinutesForDestination(destinationType) {
+  return destinationType === "office" ? MAX_MINUTES_OFFICE : MAX_MINUTES_APARTMENT;
+}
 
 /**
  * Escucha en tiempo real los 13 espacios de parqueo. Es el ÚNICO listener
@@ -40,8 +55,31 @@ class OperationError extends Error {}
 
 export async function registerEntry(spaceNumber, data) {
   const profile = getProfile();
-  const settings = await getSettings();
-  const maxMinutes = settings?.maxParkingMinutes ?? 120;
+  const destinationType = data.destinationType;
+  const destinationNumber = data.destinationNumber.trim();
+  const maxMinutes = maxMinutesForDestination(destinationType);
+
+  // Límite de parqueos de visita simultáneos por apartamento/oficina. Se
+  // consulta ANTES de la transacción (Firestore no permite consultas por
+  // filtro dentro de una transacción, solo lecturas de documentos puntuales),
+  // así que existe una pequeñísima ventana de carrera entre dos guardias
+  // registrando el mismo destino en el mismo instante — aceptable para este
+  // límite de "buen uso", a diferencia de la ocupación del espacio físico
+  // (esa sí queda 100% protegida por la transacción de abajo).
+  const activeCountSnap = await getCountFromServer(
+    query(
+      collection(db, "parking_sessions"),
+      where("status", "==", "open"),
+      where("destinationType", "==", destinationType),
+      where("destinationNumber", "==", destinationNumber)
+    )
+  );
+  if (activeCountSnap.data().count >= MAX_SIMULTANEOUS_PER_DESTINATION) {
+    throw new OperationError(
+      `Ya hay ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita en uso para este ${destinationType === "office" ? "local" : "apartamento"} (máximo permitido). Debe liberarse uno antes de registrar otro.`
+    );
+  }
+
   const spaceRef = doc(db, "parking_spaces", spaceNumber);
   const sessionRef = doc(collection(db, "parking_sessions"));
 
@@ -62,8 +100,8 @@ export async function registerEntry(spaceNumber, data) {
       visitorName: data.visitorName,
       visitorId: data.visitorId,
       plate: data.plate,
-      destinationType: data.destinationType,
-      destinationNumber: data.destinationNumber,
+      destinationType,
+      destinationNumber,
       entryAt: serverTimestamp(),
       entryGuardUid: profile.uid,
       entryGuardName: profile.name,
@@ -84,8 +122,8 @@ export async function registerEntry(spaceNumber, data) {
       visitorName: data.visitorName,
       visitorId: data.visitorId,
       plate: data.plate,
-      destinationType: data.destinationType,
-      destinationNumber: data.destinationNumber,
+      destinationType,
+      destinationNumber,
       entryAt: serverTimestamp(),
       entryGuardName: profile.name,
       entryLobby: profile.lobby || data.lobbyOverride || null,

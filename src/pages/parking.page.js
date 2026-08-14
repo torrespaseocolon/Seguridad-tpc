@@ -1,21 +1,22 @@
 import { el, clear, toast, confirmDialog, openModal } from "../utils/dom.js";
-import { subscribeParkingSpaces, registerEntry, registerExit, OperationError } from "../services/parking.service.js";
+import { icon } from "../utils/icons.js";
+import { subscribeParkingSpaces, registerEntry, registerExit, OperationError, MAX_MINUTES_OFFICE, MAX_MINUTES_APARTMENT, MAX_SIMULTANEOUS_PER_DESTINATION } from "../services/parking.service.js";
 import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
 import { getProfile } from "../services/auth.service.js";
 import { navigate } from "../router.js";
 
 const TYPE_BADGE = {
   visitor: null,
-  disability: { text: "♿ DISCAPACIDAD", cls: "badge--disability" },
-  disabled: { text: "FUERA DE SERVICIO", cls: "badge--disabled" },
+  disability: { icon: "wheelchair", text: "DISCAPACIDAD", cls: "badge--disability" },
+  disabled: { icon: null, text: "FUERA DE SERVICIO", cls: "badge--disabled" },
 };
 
 export function renderParking(root) {
   clear(root);
   root.appendChild(
     el("div", { class: "back-bar" }, [
-      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, "← Menú"),
-      el("h2", {}, "🅿️ Parqueos de visita"),
+      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
+      el("h2", { class: "row" }, [icon("parking"), "Parqueos de visita"]),
     ])
   );
 
@@ -71,15 +72,15 @@ function renderSpaceCard(space) {
 
   const children = [
     el("div", { class: "space-card__number" }, `PARQUEO ${space.number}`),
-    badge ? el("span", { class: `badge ${badge.cls}` }, badge.text) : null,
+    badge ? el("span", { class: `badge ${badge.cls}` }, [badge.icon ? icon(badge.icon, { size: 14 }) : null, badge.text].filter(Boolean)) : null,
   ];
 
   if (isDisabled) {
     children.push(el("div", { class: "text-secondary" }, "No disponible"));
   } else if (isFree) {
-    children.push(el("span", { class: "badge badge--free" }, "🟢 LIBRE"));
+    children.push(el("span", { class: "badge badge--free" }, [el("span", { class: "status-dot" }), "LIBRE"]));
   } else {
-    children.push(el("span", { class: "badge badge--occupied" }, "🔴 OCUPADO"));
+    children.push(el("span", { class: "badge badge--occupied" }, [el("span", { class: "status-dot" }), "OCUPADO"]));
     children.push(el("div", { style: "font-weight:700;" }, space.visitorName || ""));
     children.push(el("div", { class: "text-secondary" }, `${space.plate || ""} · Apt. ${space.destinationNumber || ""}`));
     children.push(el("div", { class: "timer mono", id: `timer-${space.number}` }, formatElapsed(space.entryAt)));
@@ -99,9 +100,14 @@ function openEntryModal(space) {
   const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
   const destTypeInput = el("select", { class: "form-control" }, [
     el("option", { value: "apartment" }, "Apartamento"),
-    el("option", { value: "office" }, "Oficina"),
+    el("option", { value: "office" }, "Oficina / Comercio"),
   ]);
   const destNumberInput = el("input", { class: "form-control", required: true, placeholder: "Ej. 804" });
+  const limitHint = el(
+    "div",
+    { class: "form-hint" },
+    `Límite automático: apartamentos hasta ${MAX_MINUTES_APARTMENT / 60} horas, oficinas/comercios hasta ${MAX_MINUTES_OFFICE / 60} horas. Máximo ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita simultáneos por apartamento/oficina.`
+  );
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR ENTRADA");
 
@@ -148,6 +154,7 @@ function openEntryModal(space) {
       field("Placa", plateInput),
       field("Destino", destTypeInput),
       field("Número de apartamento / oficina", destNumberInput),
+      limitHint,
       lobbySelect ? field("Lobby que registra", lobbySelect) : null,
       errorBox,
       submitBtn,

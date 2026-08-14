@@ -1,4 +1,5 @@
 import { el, clear } from "../utils/dom.js";
+import { icon } from "../utils/icons.js";
 import { getProfile } from "../services/auth.service.js";
 import { navigate } from "../router.js";
 import { db } from "../firebase/firebase-init.js";
@@ -10,11 +11,11 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 
 const TILES = [
-  { path: "/parqueos", icon: "🅿️", label: "Parqueos" },
-  { path: "/paquetes", icon: "📦", label: "Paquetes", badgeKey: "packages" },
-  { path: "/objetos", icon: "🧰", label: "Objetos" },
-  { path: "/tarjetas", icon: "💳", label: "Tarjetas / Stickers", badgeKey: "accessItems" },
-  { path: "/actividad", icon: "📋", label: "Actividad" },
+  { path: "/parqueos", icon: "parking", label: "Parqueos" },
+  { path: "/paquetes", icon: "package", label: "Paquetes", badgeKey: "packages" },
+  { path: "/objetos", icon: "tools", label: "Objetos" },
+  { path: "/tarjetas", icon: "card", label: "Tarjetas / Stickers", badgeKey: "accessItems" },
+  { path: "/actividad", icon: "activity", label: "Actividad" },
 ];
 
 export function renderHome(root) {
@@ -23,14 +24,14 @@ export function renderHome(root) {
 
   const tiles = TILES.slice();
   if (profile.role === "admin") {
-    tiles.push({ path: "/admin", icon: "👨‍💼", label: "Administración" });
+    tiles.push({ path: "/admin", icon: "admin", label: "Administración" });
   }
 
   const grid = el("div", { class: "menu-grid" });
   const badgeSlots = {};
 
   for (const tile of tiles) {
-    const inner = [el("div", { class: "menu-tile__icon" }, tile.icon), el("div", { class: "menu-tile__label" }, tile.label)];
+    const inner = [el("div", { class: "menu-tile__icon" }, [icon(tile.icon, { size: 28 })]), el("div", { class: "menu-tile__label" }, tile.label)];
     let badgeSlot = null;
     if (tile.badgeKey) {
       badgeSlot = el("div", { class: "menu-tile__badge", style: "display:none;" }, "0");

@@ -1,4 +1,5 @@
 import { el, clear, toast, openModal, loadingState, emptyState } from "../utils/dom.js";
+import { icon } from "../utils/icons.js";
 import { createErrorReport, fetchMyReports } from "../services/error-reports.service.js";
 import { fetchParkingHistory } from "../services/parking.service.js";
 import { formatDateTime } from "../utils/time.js";
@@ -9,13 +10,13 @@ export function renderActivity(root) {
   clear(root);
   root.appendChild(
     el("div", { class: "back-bar" }, [
-      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, "← Menú"),
-      el("h2", {}, "📋 Actividad"),
+      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
+      el("h2", { class: "row" }, [icon("activity"), "Actividad"]),
     ])
   );
 
   root.appendChild(
-    el("button", { class: "btn btn--danger btn--block mb-md", onclick: () => openReportModal(loadReports) }, "⚠️ REPORTAR ERROR")
+    el("button", { class: "btn btn--danger btn--block mb-md", onclick: () => openReportModal(loadReports) }, [icon("warning", { size: 18 }), " REPORTAR ERROR"])
   );
 
   root.appendChild(el("div", { class: "card__title" }, "Mis reportes"));
@@ -33,7 +34,7 @@ export function renderActivity(root) {
       const reports = await fetchMyReports();
       clear(reportsList);
       if (reports.length === 0) {
-        reportsList.appendChild(emptyState("📋", "No ha reportado errores."));
+        reportsList.appendChild(emptyState("activity", "No ha reportado errores."));
         return;
       }
       for (const r of reports) {
@@ -50,7 +51,7 @@ export function renderActivity(root) {
       }
     } catch (err) {
       clear(reportsList);
-      reportsList.appendChild(emptyState("⚠️", friendlyError(err)));
+      reportsList.appendChild(emptyState("warning", friendlyError(err)));
     }
   }
 
@@ -61,7 +62,7 @@ export function renderActivity(root) {
       const sessions = await fetchParkingHistory({ max: 15 });
       clear(activityList);
       if (sessions.length === 0) {
-        activityList.appendChild(emptyState("🅿️", "Aún no hay historial de parqueos."));
+        activityList.appendChild(emptyState("parking", "Aún no hay historial de parqueos."));
         return;
       }
       for (const s of sessions) {
@@ -78,7 +79,7 @@ export function renderActivity(root) {
       }
     } catch (err) {
       clear(activityList);
-      activityList.appendChild(emptyState("⚠️", friendlyError(err)));
+      activityList.appendChild(emptyState("warning", friendlyError(err)));
     }
   }
 

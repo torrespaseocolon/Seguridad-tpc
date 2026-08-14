@@ -12,10 +12,21 @@
   <link rel="apple-touch-icon" href="./icons/logo-placeholder.svg" />
 
   <link rel="stylesheet" href="./src/styles/main.css" />
+  <script>
+    // Aplica el tema guardado ANTES de pintar, para evitar un parpadeo del
+    // tema equivocado al cargar. Si no hay preferencia guardada, no hace
+    // nada y el CSS sigue prefers-color-scheme automáticamente.
+    (function () {
+      try {
+        var t = localStorage.getItem("tpc-theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body>
   <div id="app">
-    <div id="offline-banner" class="offline-banner">🔴 SIN CONEXIÓN — Los cambios no se guardarán hasta que vuelva la señal</div>
+    <div id="offline-banner" class="offline-banner">SIN CONEXIÓN — Los cambios no se guardarán hasta que vuelva la señal</div>
     <div id="app-root"></div>
   </div>
   <div id="toast-region"></div>

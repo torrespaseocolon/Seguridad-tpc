@@ -1,11 +1,12 @@
 import { el, clear, toast, openModal, loadingState, confirmDialog } from "../../utils/dom.js";
+import { icon } from "../../utils/icons.js";
 import { fetchUsers, updateUser } from "../../services/users.service.js";
 import { createStaffAccount, getProfile } from "../../services/auth.service.js";
 import { friendlyError } from "../../utils/errors.js";
 
 export async function renderUsersTab(root) {
   clear(root);
-  root.appendChild(el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openCreateModal(load) }, "+ CREAR USUARIO"));
+  root.appendChild(el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openCreateModal(load) }, [icon("plus", { size: 18 }), " CREAR USUARIO"]));
   const list = el("div", { class: "stack" });
   root.appendChild(list);
 

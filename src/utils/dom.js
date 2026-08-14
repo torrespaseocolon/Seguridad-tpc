@@ -1,4 +1,5 @@
 // Pequeñas utilidades de interfaz sin depender de ningún framework.
+import { icon } from "./icons.js";
 
 export function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -68,12 +69,23 @@ export function confirmDialog({ title, body, confirmText = "Confirmar", cancelTe
   });
 }
 
-/** Muestra un modal genérico con contenido personalizado (un DOM node). Devuelve una función para cerrarlo. */
+/**
+ * Muestra un modal genérico con contenido personalizado (un DOM node).
+ * Siempre incluye un botón de cerrar (✕) visible arriba a la derecha, para
+ * que sea obvio cómo salir sin completar el formulario por si se abrió por
+ * error. Devuelve una función para cerrarlo.
+ */
 export function openModal(contentNode) {
   const backdrop = el("div", { class: "modal-backdrop" });
-  const modal = el("div", { class: "modal" }, [contentNode]);
+  const closeBtn = el(
+    "button",
+    { type: "button", class: "modal__close", "aria-label": "Cerrar" },
+    [icon("close", { size: 18 })]
+  );
+  const modal = el("div", { class: "modal" }, [closeBtn, contentNode]);
   backdrop.appendChild(modal);
   const closeFn = () => backdrop.remove();
+  closeBtn.addEventListener("click", closeFn);
   backdrop.addEventListener("click", (e) => {
     if (e.target === backdrop) closeFn();
   });
@@ -85,9 +97,10 @@ export function loadingState(text = "Cargando...") {
   return el("div", { class: "loading-state" }, [el("div", { class: "spinner" }), el("div", {}, text)]);
 }
 
-export function emptyState(icon, text) {
+/** iconName: clave de src/utils/icons.js (por ejemplo "package", "warning"). */
+export function emptyState(iconName, text) {
   return el("div", { class: "empty-state" }, [
-    el("div", { class: "empty-state__icon" }, icon),
+    el("div", { class: "empty-state__icon" }, [icon(iconName, { size: 36 })]),
     el("div", {}, text),
   ]);
 }

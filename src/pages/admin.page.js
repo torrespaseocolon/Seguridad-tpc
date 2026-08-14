@@ -1,4 +1,5 @@
 import { el, clear } from "../utils/dom.js";
+import { icon } from "../utils/icons.js";
 import { navigate } from "../router.js";
 import { renderDashboardTab } from "./admin/dashboard.tab.js";
 import { renderUsersTab } from "./admin/users.tab.js";
@@ -22,8 +23,8 @@ export function renderAdmin(root, params) {
   clear(root);
   root.appendChild(
     el("div", { class: "back-bar" }, [
-      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, "← Menú"),
-      el("h2", {}, "👨‍💼 Administración"),
+      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
+      el("h2", { class: "row" }, [icon("admin"), "Administración"]),
     ])
   );
 

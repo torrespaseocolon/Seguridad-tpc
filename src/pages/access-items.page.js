@@ -1,4 +1,5 @@
 import { el, clear, toast, confirmDialog, loadingState, emptyState } from "../utils/dom.js";
+import { icon } from "../utils/icons.js";
 import { fetchPendingAccessItems, deliverAccessItem, TYPE_LABELS } from "../services/access-items.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
@@ -8,12 +9,12 @@ export function renderAccessItems(root) {
   clear(root);
   root.appendChild(
     el("div", { class: "back-bar" }, [
-      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, "← Menú"),
-      el("h2", {}, "💳 Tarjetas / Stickers"),
+      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
+      el("h2", { class: "row" }, [icon("card"), "Tarjetas / Stickers"]),
     ])
   );
   const list = el("div", { class: "stack" });
-  root.appendChild(el("button", { class: "btn btn--secondary mb-md", onclick: load }, "↻ Actualizar"));
+  root.appendChild(el("button", { class: "btn btn--secondary mb-md", onclick: load }, [icon("refresh", { size: 18 }), " Actualizar"]));
   root.appendChild(list);
 
   async function load() {
@@ -23,13 +24,13 @@ export function renderAccessItems(root) {
       const items = await fetchPendingAccessItems();
       clear(list);
       if (items.length === 0) {
-        list.appendChild(emptyState("💳", "No hay tarjetas ni stickers pendientes de entrega."));
+        list.appendChild(emptyState("card", "No hay tarjetas ni stickers pendientes de entrega."));
         return;
       }
       for (const item of items) list.appendChild(renderCard(item, load));
     } catch (err) {
       clear(list);
-      list.appendChild(emptyState("⚠️", friendlyError(err)));
+      list.appendChild(emptyState("warning", friendlyError(err)));
     }
   }
 

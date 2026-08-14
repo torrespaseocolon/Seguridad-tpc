@@ -1,4 +1,5 @@
 import { el, clear, toast, confirmDialog, openModal, loadingState, emptyState } from "../utils/dom.js";
+import { icon } from "../utils/icons.js";
 import { fetchActiveObjects, fetchActiveLoans, loanObject, returnObject, OperationError } from "../services/objects.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
@@ -10,8 +11,8 @@ export function renderObjects(root) {
   clear(root);
   root.appendChild(
     el("div", { class: "back-bar" }, [
-      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, "← Menú"),
-      el("h2", {}, "🧰 Objetos"),
+      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
+      el("h2", { class: "row" }, [icon("tools"), "Objetos"]),
     ])
   );
 
@@ -54,7 +55,7 @@ export function renderObjects(root) {
         clear(list);
         const available = objects.filter((o) => o.availableQuantity > 0);
         if (available.length === 0) {
-          list.appendChild(emptyState("🧰", "No hay objetos disponibles en este momento."));
+          list.appendChild(emptyState("tools", "No hay objetos disponibles en este momento."));
           return;
         }
         for (const obj of available) list.appendChild(renderObjectCard(obj, load));
@@ -62,14 +63,14 @@ export function renderObjects(root) {
         const loans = await fetchActiveLoans();
         clear(list);
         if (loans.length === 0) {
-          list.appendChild(emptyState("🧰", "No hay objetos prestados actualmente."));
+          list.appendChild(emptyState("tools", "No hay objetos prestados actualmente."));
           return;
         }
         for (const loan of loans) list.appendChild(renderLoanCard(loan, load));
       }
     } catch (err) {
       clear(list);
-      list.appendChild(emptyState("⚠️", friendlyError(err)));
+      list.appendChild(emptyState("warning", friendlyError(err)));
     }
   }
 
