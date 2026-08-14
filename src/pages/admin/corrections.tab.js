@@ -1,7 +1,7 @@
 import { el, clear, toast, openModal, loadingState, confirmDialog } from "../../utils/dom.js";
 import { fetchOpenReports, resolveErrorReport } from "../../services/error-reports.service.js";
 import { fetchSessionsByPlate, reopenSession, correctSessionFields, OperationError } from "../../services/parking.service.js";
-import { parseDestinationCode, buildDestinationCode } from "../../utils/destination.js";
+import { createDestinationField } from "../../utils/destination-field.js";
 import { formatDateTime } from "../../utils/time.js";
 import { friendlyError } from "../../utils/errors.js";
 
@@ -137,9 +137,9 @@ function openEditModal(session, reload) {
   const nameInput = el("input", { class: "form-control", value: session.visitorName || "" });
   const idInput = el("input", { class: "form-control", value: session.visitorId || "" });
   const plateInput = el("input", { class: "form-control", value: session.plate || "" });
-  const destInput = el("input", { class: "form-control", value: session.destinationNumber || "", placeholder: "Ej. A-801" });
-  const destHint = el("div", { class: "form-hint" }, "Formato: Torre (A o B) - número de piso+unidad, ej. A-801.");
+  const destField = createDestinationField({ required: true, initialValue: session.destinationNumber || "" });
   const noteInput = el("textarea", { class: "form-control", rows: "2", placeholder: "Motivo de la corrección" });
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg" }, "GUARDAR CORRECCIÓN");
 
   const content = el("div", { class: "stack" }, [
@@ -147,17 +147,24 @@ function openEditModal(session, reload) {
     field("Nombre", nameInput),
     field("Cédula", idInput),
     field("Placa", plateInput),
-    field("Apartamento/oficina", destInput),
-    destHint,
+    field("Torre", destField.towerSelect),
+    field("Piso + unidad", destField.numberInput),
+    destField.hint,
     field("Motivo de la corrección", noteInput),
+    errorBox,
     submitBtn,
   ]);
   const closeFn = openModal(content);
 
   submitBtn.addEventListener("click", async () => {
+    const destResult = destField.getResult();
+    if (!destResult.ok) {
+      errorBox.textContent = destResult.error;
+      errorBox.style.display = "block";
+      return;
+    }
+    errorBox.style.display = "none";
     submitBtn.disabled = true;
-    const { tower, digits } = parseDestinationCode(destInput.value);
-    const normalizedDestination = tower && digits ? buildDestinationCode(tower, digits) : destInput.value.trim();
     try {
       await correctSessionFields(
         session.id,
@@ -165,7 +172,7 @@ function openEditModal(session, reload) {
           visitorName: nameInput.value.trim(),
           visitorId: idInput.value.trim(),
           plate: plateInput.value.trim().toUpperCase(),
-          destinationNumber: normalizedDestination,
+          destinationNumber: destResult.code,
         },
         noteInput.value.trim()
       );

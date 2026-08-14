@@ -1,5 +1,6 @@
 import { el, clear, toast, confirmDialog, openModal, loadingState, emptyState } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
+import { createDestinationField } from "../utils/destination-field.js";
 import { fetchActiveObjects, fetchActiveLoans, loanObject, returnObject, OperationError } from "../services/objects.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
@@ -114,7 +115,7 @@ function openLoanModal(obj, reload) {
     el("option", { value: "other" }, "Otro"),
   ]);
   const nameInput = el("input", { class: "form-control", required: true });
-  const apartmentInput = el("input", { class: "form-control", placeholder: "Si aplica" });
+  const destField = createDestinationField({ required: false });
   const notesInput = el("textarea", { class: "form-control", rows: "2" });
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR PRÉSTAMO");
@@ -130,6 +131,12 @@ function openLoanModal(obj, reload) {
           errorBox.style.display = "block";
           return;
         }
+        const destResult = destField.getResult();
+        if (!destResult.ok) {
+          errorBox.textContent = destResult.error;
+          errorBox.style.display = "block";
+          return;
+        }
         submitBtn.disabled = true;
         submitBtn.textContent = "GUARDANDO...";
         try {
@@ -138,7 +145,7 @@ function openLoanModal(obj, reload) {
             objectName: obj.name,
             borrowerType: typeSelect.value,
             borrowerName: nameInput.value.trim(),
-            apartment: apartmentInput.value.trim(),
+            apartment: destResult.code,
             notes: notesInput.value.trim(),
           });
           toast("Préstamo registrado.", "success");
@@ -156,7 +163,9 @@ function openLoanModal(obj, reload) {
       el("div", { class: "modal__title" }, `Prestar: ${obj.name}`),
       field("¿A quién se presta?", typeSelect),
       field("Nombre *", nameInput),
-      field("Apartamento (si corresponde)", apartmentInput),
+      field("Torre (si corresponde)", destField.towerSelect),
+      field("Piso + unidad (si corresponde)", destField.numberInput),
+      destField.hint,
       field("Observaciones", notesInput),
       errorBox,
       submitBtn,

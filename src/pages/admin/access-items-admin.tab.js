@@ -1,5 +1,6 @@
 import { el, clear, toast, openModal, loadingState } from "../../utils/dom.js";
 import { icon } from "../../utils/icons.js";
+import { createDestinationField } from "../../utils/destination-field.js";
 import { createAccessItem, fetchAccessItemHistory, TYPE_LABELS } from "../../services/access-items.service.js";
 import { formatDateTime } from "../../utils/time.js";
 import { friendlyError } from "../../utils/errors.js";
@@ -45,8 +46,7 @@ function openCreateModal(reload) {
     el("option", { value: "other" }, "Otro"),
   ]);
   const nameInput = el("input", { class: "form-control", required: true });
-  const apartmentInput = el("input", { class: "form-control", required: true });
-  const towerInput = el("input", { class: "form-control" });
+  const destField = createDestinationField({ required: true });
   const lobbySelect = el("select", { class: "form-control" }, [
     el("option", { value: "A" }, "Lobby A"),
     el("option", { value: "B" }, "Lobby B"),
@@ -61,8 +61,14 @@ function openCreateModal(reload) {
       class: "stack",
       onsubmit: async (e) => {
         e.preventDefault();
-        if (!nameInput.value.trim() || !apartmentInput.value.trim()) {
+        if (!nameInput.value.trim()) {
           errorBox.textContent = "Complete los campos obligatorios.";
+          errorBox.style.display = "block";
+          return;
+        }
+        const destResult = destField.getResult();
+        if (!destResult.ok) {
+          errorBox.textContent = destResult.error;
           errorBox.style.display = "block";
           return;
         }
@@ -72,8 +78,8 @@ function openCreateModal(reload) {
           await createAccessItem({
             type: typeSelect.value,
             recipientName: nameInput.value.trim(),
-            apartment: apartmentInput.value.trim(),
-            tower: towerInput.value.trim(),
+            apartment: destResult.code,
+            tower: destResult.tower,
             dropLobby: lobbySelect.value,
             notes: notesInput.value.trim(),
           });
@@ -92,8 +98,9 @@ function openCreateModal(reload) {
       el("div", { class: "modal__title" }, "Nueva tarjeta / sticker"),
       field("Tipo", typeSelect),
       field("Nombre de quien debe retirarlo *", nameInput),
-      field("Apartamento *", apartmentInput),
-      field("Torre", towerInput),
+      field("Torre *", destField.towerSelect),
+      field("Piso + unidad *", destField.numberInput),
+      destField.hint,
       field("Lobby donde se deja", lobbySelect),
       field("Observaciones", notesInput),
       errorBox,

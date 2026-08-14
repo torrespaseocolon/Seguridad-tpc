@@ -1,5 +1,6 @@
 import { el, clear, toast, confirmDialog, openModal, loadingState, emptyState } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
+import { createDestinationField } from "../utils/destination-field.js";
 import { createPackage, fetchPendingPackages, deliverPackage } from "../services/packages.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
@@ -78,7 +79,7 @@ function renderPackageCard(pkg, reload) {
 }
 
 function openNewPackageModal(reload) {
-  const apartmentInput = el("input", { class: "form-control", required: true, placeholder: "Ej. 804" });
+  const destField = createDestinationField({ required: true });
   const nameInput = el("input", { class: "form-control", required: true });
   const courierInput = el("input", { class: "form-control", required: true, placeholder: "Ej. Correos de Costa Rica, Amazon, Uber..." });
   const trackingInput = el("input", { class: "form-control" });
@@ -92,7 +93,13 @@ function openNewPackageModal(reload) {
       class: "stack",
       onsubmit: async (e) => {
         e.preventDefault();
-        if (!apartmentInput.value.trim() || !nameInput.value.trim() || !courierInput.value.trim()) {
+        const destResult = destField.getResult();
+        if (!destResult.ok) {
+          errorBox.textContent = destResult.error;
+          errorBox.style.display = "block";
+          return;
+        }
+        if (!nameInput.value.trim() || !courierInput.value.trim()) {
           errorBox.textContent = "Complete los campos obligatorios.";
           errorBox.style.display = "block";
           return;
@@ -101,7 +108,7 @@ function openNewPackageModal(reload) {
         submitBtn.textContent = "GUARDANDO...";
         try {
           await createPackage({
-            apartment: apartmentInput.value.trim(),
+            apartment: destResult.code,
             recipientName: nameInput.value.trim(),
             courier: courierInput.value.trim(),
             trackingNumber: trackingInput.value.trim(),
@@ -120,7 +127,9 @@ function openNewPackageModal(reload) {
     },
     [
       el("div", { class: "modal__title" }, "Nuevo paquete"),
-      field("Apartamento / Oficina *", apartmentInput),
+      field("Torre *", destField.towerSelect),
+      field("Piso + unidad *", destField.numberInput),
+      destField.hint,
       field("Nombre del destinatario *", nameInput),
       field("Empresa de mensajería *", courierInput),
       field("Número de guía (opcional)", trackingInput),
@@ -131,7 +140,7 @@ function openNewPackageModal(reload) {
   );
 
   const closeFn = openModal(form);
-  apartmentInput.focus();
+  destField.numberInput.focus();
 }
 
 function field(labelText, inputNode) {
