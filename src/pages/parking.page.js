@@ -1,7 +1,7 @@
 import { el, clear, toast, confirmDialog, openModal } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
 import { subscribeParkingSpaces, registerEntry, registerExit, OperationError, MAX_MINUTES_OFFICE, MAX_MINUTES_APARTMENT, MAX_SIMULTANEOUS_PER_DESTINATION } from "../services/parking.service.js";
-import { normalizeDigits, isValidDigits, buildDestinationCode, suggestDestinationType } from "../utils/destination.js";
+import { normalizeDigits, isValidDigits, isValidFloor, buildDestinationCode, suggestDestinationType } from "../utils/destination.js";
 import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
 import { getProfile } from "../services/auth.service.js";
 import { navigate } from "../router.js";
@@ -157,6 +157,11 @@ function openEntryModal(space) {
         const digits = normalizeDigits(numberInput.value);
         if (!isValidDigits(digits)) {
           errorBox.textContent = "Ingrese el número de piso + unidad (3 o 4 dígitos), por ejemplo 801 o 1204.";
+          errorBox.style.display = "block";
+          return;
+        }
+        if (!isValidFloor(digits)) {
+          errorBox.textContent = "El piso ingresado no es válido (ningún edificio supera el piso 30). Revise el número.";
           errorBox.style.display = "block";
           return;
         }

@@ -7,13 +7,16 @@
 // "0801" en la torre A quedan como el mismo destino.
 //
 // Distribución de pisos (informada por administración, ago-2026):
-//   Torre A: pisos 1-8 oficinas/comercios, piso 9 en adelante apartamentos.
+//   Torre A: pisos 1-9 oficinas/comercios, piso 10 en adelante apartamentos.
 //   Torre B: piso 1 oficinas/comercios, pisos 2-7 son de parqueos internos
 //            (sin unidades), piso 8 en adelante apartamentos.
 // El número se interpreta como piso+unidad: 3 dígitos = 1 dígito de piso
 // (1-9) + 2 de unidad; 4 dígitos = 2 dígitos de piso (10-99) + 2 de unidad.
+// Ningún edificio tiene más de 30 pisos: un piso mayor a ese casi seguro es
+// un error de tipeo, así que se bloquea en el formulario.
 
 export const TOWERS = ["A", "B"];
+export const MAX_FLOOR = 30;
 
 /** Deja solo dígitos y quita ceros a la izquierda (pero conserva al menos un dígito). */
 export function normalizeDigits(raw) {
@@ -33,10 +36,16 @@ export function buildDestinationCode(tower, digits) {
   return `${tower}-${digits}`;
 }
 
-function floorFromDigits(digits) {
+export function floorFromDigits(digits) {
   if (digits.length === 4) return parseInt(digits.slice(0, 2), 10);
   if (digits.length === 3) return parseInt(digits.slice(0, 1), 10);
   return null;
+}
+
+/** false si el piso implícito en el número supera MAX_FLOOR (probable error de tipeo). */
+export function isValidFloor(digits) {
+  const floor = floorFromDigits(digits);
+  return floor !== null && floor <= MAX_FLOOR;
 }
 
 /**
@@ -48,7 +57,7 @@ function floorFromDigits(digits) {
 export function suggestDestinationType(tower, digits) {
   const floor = floorFromDigits(digits);
   if (floor === null) return null;
-  if (tower === "A") return floor <= 8 ? "office" : "apartment";
+  if (tower === "A") return floor <= 9 ? "office" : "apartment";
   if (tower === "B") {
     if (floor === 1) return "office";
     if (floor >= 2 && floor <= 7) return null;

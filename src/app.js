@@ -2,7 +2,7 @@ import { subscribeAuth, logout, getProfile } from "./services/auth.service.js";
 import { subscribeConnectivity } from "./utils/connectivity.js";
 import { el, clear } from "./utils/dom.js";
 import { icon } from "./utils/icons.js";
-import { initTheme, getStoredTheme, cycleTheme } from "./utils/theme.js";
+import { initTheme, getEffectiveTheme, toggleTheme } from "./utils/theme.js";
 import { renderLogin } from "./pages/login.page.js";
 import { registerRoute, setRouteGuard, startRouter, navigate, currentPath } from "./router.js";
 
@@ -23,8 +23,8 @@ let shellBuilt = false;
 let connBadgeEl = null;
 let sessionTimer = null;
 
-function themeToggleIcon(theme) {
-  return theme === "dark" ? "moon" : theme === "light" ? "sun" : "sun";
+function themeToggleIcon(effectiveTheme) {
+  return effectiveTheme === "dark" ? "moon" : "sun";
 }
 
 function buildThemeToggle() {
@@ -33,14 +33,14 @@ function buildThemeToggle() {
     {
       type: "button",
       class: "theme-toggle",
-      title: "Cambiar tema (claro / oscuro / según el sistema)",
+      title: "Cambiar entre modo claro y oscuro",
       onclick: () => {
-        const next = cycleTheme();
+        const next = toggleTheme();
         clear(btn);
         btn.appendChild(icon(themeToggleIcon(next), { size: 20 }));
       },
     },
-    [icon(themeToggleIcon(getStoredTheme()), { size: 20 })]
+    [icon(themeToggleIcon(getEffectiveTheme()), { size: 20 })]
   );
   return btn;
 }
