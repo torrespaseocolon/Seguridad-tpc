@@ -14,7 +14,7 @@
 // con el número de CACHE_NAME incrementado (ver README, "Actualizaciones
 // futuras") para que los dispositivos descarguen los archivos nuevos en
 // lugar de seguir usando la copia guardada.
-const CACHE_NAME = "seguridad-tpc-v5";
+const CACHE_NAME = "seguridad-tpc-v6";
 
 const APP_SHELL = [
   "./",
