@@ -53,8 +53,11 @@ export async function deliverPackage(id) {
   await logAudit("package.deliver", { targetCollection: "packages", targetId: id });
 }
 
-export async function fetchPackageHistory(max = 100) {
-  const q = query(collection(db, "packages"), orderBy("createdAt", "desc"), fbLimit(max));
+export async function fetchPackageHistory(max = 100, { from = null, to = null } = {}) {
+  const clauses = [];
+  if (from) clauses.push(where("createdAt", ">=", from));
+  if (to) clauses.push(where("createdAt", "<=", to));
+  const q = query(collection(db, "packages"), ...clauses, orderBy("createdAt", "desc"), fbLimit(max));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }

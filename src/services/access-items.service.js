@@ -57,8 +57,11 @@ export async function deliverAccessItem(id) {
   await logAudit("access_item.deliver", { targetCollection: "access_items", targetId: id });
 }
 
-export async function fetchAccessItemHistory(max = 100) {
-  const q = query(collection(db, "access_items"), orderBy("createdAt", "desc"), fbLimit(max));
+export async function fetchAccessItemHistory(max = 100, { from = null, to = null } = {}) {
+  const clauses = [];
+  if (from) clauses.push(where("createdAt", ">=", from));
+  if (to) clauses.push(where("createdAt", "<=", to));
+  const q = query(collection(db, "access_items"), ...clauses, orderBy("createdAt", "desc"), fbLimit(max));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }

@@ -134,8 +134,11 @@ export async function returnObject(loanId, { returnObservations, returnCondition
   await logAudit("object.return", { targetCollection: "object_loans", targetId: loanId, details: { returnCondition } });
 }
 
-export async function fetchLoanHistory(max = 100) {
-  const q = query(collection(db, "object_loans"), orderBy("loanedAt", "desc"), fbLimit(max));
+export async function fetchLoanHistory(max = 100, { from = null, to = null } = {}) {
+  const clauses = [];
+  if (from) clauses.push(where("loanedAt", ">=", from));
+  if (to) clauses.push(where("loanedAt", "<=", to));
+  const q = query(collection(db, "object_loans"), ...clauses, orderBy("loanedAt", "desc"), fbLimit(max));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }

@@ -240,9 +240,12 @@ export async function updateSpaceType(spaceNumber, type) {
   await logAudit("parking_space.update_type", { targetCollection: "parking_spaces", targetId: spaceNumber, details: { type } });
 }
 
-/** Historial con filtros — consulta bajo demanda (no listener). */
-export async function fetchParkingHistory({ max = 50 } = {}) {
-  const q = query(collection(db, "parking_sessions"), where("status", "==", "closed"), orderBy("entryAt", "desc"), fbLimit(max));
+/** Historial con filtros — consulta bajo demanda (no listener). `from`/`to` son objetos Date opcionales. */
+export async function fetchParkingHistory({ max = 50, from = null, to = null } = {}) {
+  const clauses = [where("status", "==", "closed")];
+  if (from) clauses.push(where("entryAt", ">=", from));
+  if (to) clauses.push(where("entryAt", "<=", to));
+  const q = query(collection(db, "parking_sessions"), ...clauses, orderBy("entryAt", "desc"), fbLimit(max));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
