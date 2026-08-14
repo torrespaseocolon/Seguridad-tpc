@@ -1,6 +1,7 @@
 import { el, clear, toast, confirmDialog, openModal } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
 import { subscribeParkingSpaces, registerEntry, registerExit, OperationError, MAX_MINUTES_OFFICE, MAX_MINUTES_APARTMENT, MAX_SIMULTANEOUS_PER_DESTINATION } from "../services/parking.service.js";
+import { normalizeDigits, isValidDigits, buildDestinationCode, suggestDestinationType } from "../utils/destination.js";
 import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
 import { getProfile } from "../services/auth.service.js";
 import { navigate } from "../router.js";
@@ -98,11 +99,38 @@ function openEntryModal(space) {
   const nameInput = el("input", { class: "form-control", required: true });
   const idInput = el("input", { class: "form-control", required: true });
   const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
+
+  const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
+  const towerSelect = el("select", { class: "form-control" }, [
+    el("option", { value: "A", selected: defaultTower === "A" }, "Torre A"),
+    el("option", { value: "B", selected: defaultTower === "B" }, "Torre B"),
+  ]);
+  const numberInput = el("input", {
+    class: "form-control",
+    required: true,
+    inputmode: "numeric",
+    maxlength: "4",
+    placeholder: "Ej. 801 (piso 8, unidad 01)",
+  });
   const destTypeInput = el("select", { class: "form-control" }, [
     el("option", { value: "apartment" }, "Apartamento"),
     el("option", { value: "office" }, "Oficina / Comercio"),
   ]);
-  const destNumberInput = el("input", { class: "form-control", required: true, placeholder: "Ej. 804" });
+  const previewHint = el("div", { class: "form-hint" }, "Se guardará como: —");
+
+  function refreshPreview() {
+    const digits = normalizeDigits(numberInput.value);
+    numberInput.value = digits;
+    const code = buildDestinationCode(towerSelect.value, digits);
+    const suggested = isValidDigits(digits) ? suggestDestinationType(towerSelect.value, digits) : null;
+    if (suggested) destTypeInput.value = suggested;
+    previewHint.textContent = code
+      ? `Se guardará como: ${code}${suggested ? ` (sugerido: ${suggested === "office" ? "Oficina/Comercio" : "Apartamento"})` : ""}`
+      : "Se guardará como: —";
+  }
+  towerSelect.addEventListener("change", refreshPreview);
+  numberInput.addEventListener("input", refreshPreview);
+
   const limitHint = el(
     "div",
     { class: "form-hint" },
@@ -126,6 +154,12 @@ function openEntryModal(space) {
       onsubmit: async (e) => {
         e.preventDefault();
         errorBox.style.display = "none";
+        const digits = normalizeDigits(numberInput.value);
+        if (!isValidDigits(digits)) {
+          errorBox.textContent = "Ingrese el número de piso + unidad (3 o 4 dígitos), por ejemplo 801 o 1204.";
+          errorBox.style.display = "block";
+          return;
+        }
         submitBtn.disabled = true;
         submitBtn.textContent = "GUARDANDO...";
         try {
@@ -134,7 +168,7 @@ function openEntryModal(space) {
             visitorId: idInput.value.trim(),
             plate: plateInput.value.trim().toUpperCase(),
             destinationType: destTypeInput.value,
-            destinationNumber: destNumberInput.value.trim(),
+            destinationNumber: buildDestinationCode(towerSelect.value, digits),
             lobbyOverride: lobbySelect ? lobbySelect.value : null,
           });
           toast(`Entrada registrada en el parqueo ${space.number}.`, "success");
@@ -152,8 +186,10 @@ function openEntryModal(space) {
       field("Nombre", nameInput),
       field("Cédula", idInput),
       field("Placa", plateInput),
+      field("Torre", towerSelect),
+      field("Número de piso + unidad", numberInput),
+      previewHint,
       field("Destino", destTypeInput),
-      field("Número de apartamento / oficina", destNumberInput),
       limitHint,
       lobbySelect ? field("Lobby que registra", lobbySelect) : null,
       errorBox,
