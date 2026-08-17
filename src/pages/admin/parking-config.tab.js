@@ -1,10 +1,12 @@
-import { el, clear, toast, loadingState, confirmDialog } from "../../utils/dom.js";
+import { el, clear, toast, loadingState, confirmDialog, openModal } from "../../utils/dom.js";
 import { icon } from "../../utils/icons.js";
 import { db } from "../../firebase/firebase-init.js";
 import { collection, getDocs, orderBy, query } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import {
   updateSpaceType,
   forceReleaseSpace,
+  extendParkingTime,
+  OperationError,
   MAX_MINUTES_OFFICE,
   MAX_MINUTES_APARTMENT,
   MAX_SIMULTANEOUS_PER_DESTINATION,
@@ -109,6 +111,14 @@ export async function renderParkingConfigTab(root) {
     ];
 
     if (space.status === "occupied") {
+      if (space.maxMinutesAtEntry) {
+        row.push(el("span", { class: "text-faint" }, `Límite: ${Math.round(space.maxMinutesAtEntry / 60)} h`));
+      }
+
+      const extendBtn = el("button", { class: "btn btn--secondary" }, [icon("refresh", { size: 16 }), " Extender tiempo"]);
+      extendBtn.addEventListener("click", () => openExtendModal(space, () => renderParkingConfigTab(root)));
+      row.push(extendBtn);
+
       const releaseBtn = el("button", { class: "btn btn--danger" }, "Liberar (corrección)");
       releaseBtn.addEventListener("click", async () => {
         const ok = await confirmDialog({
@@ -130,4 +140,48 @@ export async function renderParkingConfigTab(root) {
 
     grid.appendChild(el("div", { class: "card row", style: "flex-wrap:wrap;" }, row));
   }
+}
+
+function openExtendModal(space, onDone) {
+  const minutesInput = el("input", { class: "form-control", type: "number", min: "1", value: "30" });
+  const noteInput = el("textarea", { class: "form-control", rows: "2", placeholder: "Opcional — por ejemplo: \"Solicitado por WhatsApp al conserje\"" });
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg" }, "EXTENDER TIEMPO");
+
+  const content = el("div", { class: "stack" }, [
+    el("div", { class: "modal__title" }, `Extender tiempo — Parqueo ${space.number}`),
+    space.maxMinutesAtEntry
+      ? el("div", { class: "text-secondary" }, `Límite actual: ${Math.round(space.maxMinutesAtEntry / 60)} horas desde la entrada.`)
+      : null,
+    el("div", { class: "form-group" }, [el("label", { class: "form-label" }, "Minutos adicionales"), minutesInput]),
+    el("div", { class: "form-group" }, [el("label", { class: "form-label" }, "Motivo (opcional)"), noteInput]),
+    errorBox,
+    submitBtn,
+  ].filter(Boolean));
+
+  const closeFn = openModal(content);
+  minutesInput.focus();
+
+  submitBtn.addEventListener("click", async () => {
+    const additional = parseInt(minutesInput.value, 10);
+    if (!additional || additional < 1) {
+      errorBox.textContent = "Ingrese una cantidad de minutos válida.";
+      errorBox.style.display = "block";
+      return;
+    }
+    errorBox.style.display = "none";
+    submitBtn.disabled = true;
+    submitBtn.textContent = "GUARDANDO...";
+    try {
+      const result = await extendParkingTime(space.number, additional, noteInput.value.trim());
+      toast(`Tiempo extendido. Nuevo límite: ${Math.round(result.newMax / 60)} h.`, "success");
+      closeFn();
+      onDone();
+    } catch (err) {
+      errorBox.textContent = err instanceof OperationError ? err.message : friendlyError(err);
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "EXTENDER TIEMPO";
+    }
+  });
 }

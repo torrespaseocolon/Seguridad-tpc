@@ -1,6 +1,6 @@
 import { el, clear, toast, openModal, loadingState, confirmDialog } from "../../utils/dom.js";
 import { icon } from "../../utils/icons.js";
-import { fetchUsers, updateUser } from "../../services/users.service.js";
+import { fetchUsers, updateUser, deleteUser } from "../../services/users.service.js";
 import { createStaffAccount, getProfile } from "../../services/auth.service.js";
 import { friendlyError } from "../../utils/errors.js";
 
@@ -80,6 +80,30 @@ function renderUserCard(user, reload) {
     }
   });
 
+  const deleteBtn = el("button", { class: "btn btn--danger" }, [icon("close", { size: 16 }), " Eliminar"]);
+  deleteBtn.addEventListener("click", async () => {
+    if (user.uid === getProfile().uid) {
+      toast("No puede eliminar su propia cuenta.", "danger");
+      return;
+    }
+    const ok = await confirmDialog({
+      title: "Eliminar usuario",
+      body: `¿Confirma eliminar a ${user.name} (${user.email})? No podrá volver a iniciar sesión y desaparece de esta lista. Esta acción no se puede deshacer desde la app.`,
+      confirmText: "Sí, eliminar",
+      danger: true,
+    });
+    if (!ok) return;
+    deleteBtn.disabled = true;
+    try {
+      await deleteUser(user.uid, user.name);
+      toast("Usuario eliminado.", "success");
+      reload();
+    } catch (err) {
+      toast(friendlyError(err), "danger");
+      deleteBtn.disabled = false;
+    }
+  });
+
   return el("div", { class: "card" }, [
     el("div", { class: "row row--between" }, [
       el("strong", {}, user.name),
@@ -90,7 +114,7 @@ function renderUserCard(user, reload) {
       el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Rol"), roleSelect]),
       el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Lobby"), lobbySelect]),
     ]),
-    el("div", { class: "row" }, [saveBtn, toggleBtn]),
+    el("div", { class: "row", style: "flex-wrap:wrap;" }, [saveBtn, toggleBtn, deleteBtn]),
   ]);
 }
 

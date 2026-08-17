@@ -3,6 +3,7 @@ import {
   collection,
   doc,
   updateDoc,
+  deleteDoc,
   serverTimestamp,
   orderBy,
   query,
@@ -21,4 +22,17 @@ export async function updateUser(uid, patch) {
   const profile = getProfile();
   await updateDoc(doc(db, "users", uid), { ...patch, updatedAt: serverTimestamp(), updatedBy: profile.uid });
   await logAudit("user.update", { targetCollection: "users", targetId: uid, details: patch });
+}
+
+/**
+ * Borra el perfil del usuario en Firestore (deja de poder iniciar sesión de
+ * inmediato). IMPORTANTE: esto NO borra la cuenta de Firebase Authentication
+ * en sí — eso requeriría el SDK de administrador, que no está disponible sin
+ * el plan de pago Blaze. Si además querés liberar ese correo para poder
+ * reutilizarlo en una cuenta nueva, hay que borrar la cuenta manualmente
+ * desde Firebase Console → Authentication → Users.
+ */
+export async function deleteUser(uid, name) {
+  await deleteDoc(doc(db, "users", uid));
+  await logAudit("user.delete", { targetCollection: "users", targetId: uid, details: { name } });
 }

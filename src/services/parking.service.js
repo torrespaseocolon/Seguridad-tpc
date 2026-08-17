@@ -2,6 +2,7 @@ import { db } from "../firebase/firebase-init.js";
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   query,
   orderBy,
@@ -238,6 +239,39 @@ export async function forceReleaseSpace(spaceNumber, note) {
 export async function updateSpaceType(spaceNumber, type) {
   await updateDoc(doc(db, "parking_spaces", spaceNumber), { type, updatedAt: serverTimestamp() });
   await logAudit("parking_space.update_type", { targetCollection: "parking_spaces", targetId: spaceNumber, details: { type } });
+}
+
+/**
+ * Solo administración: agrega minutos extra al límite de un parqueo
+ * ocupado (por ejemplo, el visitante pidió por WhatsApp más tiempo antes de
+ * que se le acabara). Actualiza el espacio en vivo y su sesión abierta para
+ * que quede consistente en el historial.
+ */
+export async function extendParkingTime(spaceNumber, additionalMinutes, note) {
+  const spaceRef = doc(db, "parking_spaces", spaceNumber);
+  const spaceSnap = await getDoc(spaceRef);
+  if (!spaceSnap.exists()) throw new OperationError("Ese parqueo no existe.");
+  const space = spaceSnap.data();
+  if (space.status !== "occupied") {
+    throw new OperationError("Ese parqueo no está ocupado actualmente, no hay nada que extender.");
+  }
+  const newMax = (space.maxMinutesAtEntry || 0) + additionalMinutes;
+
+  await updateDoc(spaceRef, { maxMinutesAtEntry: newMax, updatedAt: serverTimestamp() });
+  if (space.sessionId) {
+    await updateDoc(doc(db, "parking_sessions", space.sessionId), {
+      maxMinutesAtEntry: newMax,
+      corrected: true,
+      correctionNote: note || `Tiempo extendido +${additionalMinutes} min por administración.`,
+    });
+  }
+
+  await logAudit("parking.extend_time", {
+    targetCollection: "parking_spaces",
+    targetId: spaceNumber,
+    details: { additionalMinutes, newMax },
+  });
+  return { ok: true, newMax };
 }
 
 /** Historial con filtros — consulta bajo demanda (no listener). `from`/`to` son objetos Date opcionales. */
