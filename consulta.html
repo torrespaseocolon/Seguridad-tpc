@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <title>Consulta de parqueo — Torres Paseo Colón</title>
+  <meta name="description" content="Consultá cuánto tiempo de parqueo le queda a su visita, sin necesidad de iniciar sesión." />
+  <meta name="theme-color" content="#2f6690" />
+  <meta name="robots" content="noindex, nofollow" />
+
+  <link rel="icon" href="./icons/logo-placeholder.svg" />
+  <link rel="stylesheet" href="./src/styles/main.css" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("tpc-theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <div id="consulta-root"></div>
+
+  <script type="module">
+    import("./src/consulta.js").catch((err) => {
+      console.error("[SEGURIDAD TPC] Error al iniciar la consulta:", err);
+      document.getElementById("consulta-root").innerHTML =
+        '<div class="login-screen"><div class="login-card"><div class="card"><div class="alert alert--danger" style="margin-bottom:0;">No se pudo cargar la consulta. Intente de nuevo más tarde.</div></div></div></div>';
+    });
+  </script>
+</body>
+</html>

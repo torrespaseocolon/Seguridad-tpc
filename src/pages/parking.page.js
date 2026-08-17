@@ -1,7 +1,8 @@
 import { el, clear, toast, confirmDialog, openModal } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
-import { subscribeParkingSpaces, registerEntry, registerExit, OperationError, MAX_MINUTES_OFFICE, MAX_MINUTES_APARTMENT, MAX_SIMULTANEOUS_PER_DESTINATION } from "../services/parking.service.js";
+import { subscribeParkingSpaces, registerEntry, registerExit, buildConsultaUrl, OperationError, MAX_MINUTES_OFFICE, MAX_MINUTES_APARTMENT, MAX_SIMULTANEOUS_PER_DESTINATION } from "../services/parking.service.js";
 import { createDestinationField } from "../utils/destination-field.js";
+import { qrImageUrl } from "../utils/qr.js";
 import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
 import { getProfile } from "../services/auth.service.js";
 import { navigate } from "../router.js";
@@ -145,7 +146,7 @@ function openEntryModal(space) {
         submitBtn.disabled = true;
         submitBtn.textContent = "GUARDANDO...";
         try {
-          await registerEntry(space.number, {
+          const result = await registerEntry(space.number, {
             visitorName: nameInput.value.trim(),
             visitorId: idInput.value.trim(),
             plate: plateInput.value.trim().toUpperCase(),
@@ -154,7 +155,7 @@ function openEntryModal(space) {
             lobbyOverride: lobbySelect ? lobbySelect.value : null,
           });
           toast(`Entrada registrada en el parqueo ${space.number}.`, "success");
-          closeFn();
+          showConsultaQr(space.number, result.consultaUrl, closeFn);
         } catch (err) {
           errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la entrada. Intente nuevamente.";
           errorBox.style.display = "block";
@@ -188,6 +189,10 @@ function openExitModal(space) {
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const timerEl = el("div", { class: "timer mono", id: "exit-modal-timer" }, formatElapsed(space.entryAt));
   const confirmBtn = el("button", { class: "btn btn--danger btn--block btn--lg" }, "REGISTRAR SALIDA");
+  const qrBtn = el("button", { class: "btn btn--secondary btn--block" }, [icon("card", { size: 18 }), " Ver código QR de consulta"]);
+  qrBtn.addEventListener("click", () => {
+    if (space.sessionId) showConsultaQr(space.number, buildConsultaUrl(space.sessionId), null);
+  });
 
   const content = el("div", { class: "stack" }, [
     el("div", { class: "modal__title" }, `Parqueo ${space.number}`),
@@ -200,6 +205,7 @@ function openExitModal(space) {
       row("Registrado por", `${space.entryGuardName || ""} (Lobby ${space.entryLobby || "-"})`),
     ]),
     el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
+    qrBtn,
     errorBox,
     confirmBtn,
   ]);
@@ -233,6 +239,20 @@ function openExitModal(space) {
       confirmBtn.textContent = "REGISTRAR SALIDA";
     }
   });
+}
+
+/** Muestra el código QR de consulta pública para que el guardia se lo enseñe al visitante. */
+function showConsultaQr(spaceNumber, consultaUrl, closeParentModal) {
+  if (closeParentModal) closeParentModal();
+  const okBtn = el("button", { class: "btn btn--primary btn--block btn--lg mt-md" }, "LISTO");
+  const content = el("div", { class: "stack text-center" }, [
+    el("div", { class: "modal__title" }, `Código de consulta — Parqueo ${spaceNumber}`),
+    el("div", { class: "text-secondary mb-md" }, "Muéstrele este código QR al visitante para que consulte desde su celular cuánto tiempo de parqueo le queda, sin necesidad de cuenta ni contraseña."),
+    el("img", { src: qrImageUrl(consultaUrl), alt: "Código QR de consulta", style: "margin:0 auto; border-radius:var(--radius-sm);" }),
+    okBtn,
+  ]);
+  const closeFn = openModal(content);
+  okBtn.addEventListener("click", closeFn);
 }
 
 function field(labelText, inputNode) {

@@ -9,6 +9,7 @@ import {
   runTransaction,
   serverTimestamp,
   updateDoc,
+  setDoc,
   getDocs,
   getCountFromServer,
   where,
@@ -31,6 +32,16 @@ export const MAX_SIMULTANEOUS_PER_DESTINATION = 3;
 
 function maxMinutesForDestination(destinationType) {
   return destinationType === "office" ? MAX_MINUTES_OFFICE : MAX_MINUTES_APARTMENT;
+}
+
+/**
+ * Dirección pública de consulta (sin iniciar sesión) para que el visitante
+ * vea cuánto tiempo le queda escaneando su código QR. Se arma relativa a la
+ * ubicación actual del sitio, así que funciona igual en GitHub Pages o en
+ * cualquier otro lugar donde se publique el proyecto.
+ */
+export function buildConsultaUrl(sessionId) {
+  return new URL(`consulta.html?id=${encodeURIComponent(sessionId)}`, window.location.href).href;
 }
 
 /**
@@ -131,6 +142,17 @@ export async function registerEntry(spaceNumber, data) {
       maxMinutesAtEntry: maxMinutes,
       updatedAt: serverTimestamp(),
     });
+
+    // Espejo público (sin datos personales) para la consulta por QR.
+    tx.set(doc(db, "public_status", sessionRef.id), {
+      spaceNumber,
+      destinationType,
+      entryAt: serverTimestamp(),
+      maxMinutesAtEntry: maxMinutes,
+      extendedMinutes: 0,
+      status: "open",
+      exitAt: null,
+    });
   });
 
   await logAudit("parking.entry", {
@@ -139,7 +161,7 @@ export async function registerEntry(spaceNumber, data) {
     details: { spaceNumber, plate: data.plate },
   });
 
-  return { ok: true };
+  return { ok: true, sessionId: sessionRef.id, consultaUrl: buildConsultaUrl(sessionRef.id) };
 }
 
 export async function registerExit(spaceNumber) {
@@ -186,6 +208,8 @@ export async function registerExit(spaceNumber) {
       maxMinutesAtEntry: null,
       updatedAt: serverTimestamp(),
     });
+
+    tx.set(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true });
   });
 
   await logAudit("parking.exit", {
@@ -229,6 +253,7 @@ export async function forceReleaseSpace(spaceNumber, note) {
       corrected: true,
       correctionNote: note || "Liberado manualmente por administración.",
     });
+    await setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true });
   }
 
   await logAudit("parking.force_release", { targetCollection: "parking_spaces", targetId: spaceNumber, details: { note } });
@@ -264,6 +289,11 @@ export async function extendParkingTime(spaceNumber, additionalMinutes, note) {
       corrected: true,
       correctionNote: note || `Tiempo extendido +${additionalMinutes} min por administración.`,
     });
+    await setDoc(
+      doc(db, "public_status", space.sessionId),
+      { maxMinutesAtEntry: newMax, extendedMinutes: newMax - maxMinutesForDestination(space.destinationType), status: "open", exitAt: null },
+      { merge: true }
+    );
   }
 
   await logAudit("parking.extend_time", {
@@ -333,6 +363,12 @@ export async function reopenSession(sessionId, note) {
       maxMinutesAtEntry: session.maxMinutesAtEntry,
       updatedAt: serverTimestamp(),
     });
+
+    tx.set(
+      doc(db, "public_status", sessionId),
+      { status: "open", exitAt: null, maxMinutesAtEntry: session.maxMinutesAtEntry, spaceNumber: session.spaceNumber, destinationType: session.destinationType },
+      { merge: true }
+    );
   });
 
   await logAudit("parking_session.reopen", { targetCollection: "parking_sessions", targetId: sessionId, details: { note } });

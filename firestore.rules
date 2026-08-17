@@ -303,6 +303,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // -------------------------------------------------------------------
+    // public_status — espejo MÍNIMO y sin datos personales de una visita de
+    // parqueo, pensado para que el propio visitante consulte cuánto tiempo
+    // le queda escaneando un código QR, SIN iniciar sesión. A propósito es
+    // una colección separada de parking_sessions: esta nunca tiene nombre,
+    // cédula ni placa — solo hora de entrada, límite de tiempo y estado.
+    // "get" (leer un documento puntual, si ya se sabe su ID) es público;
+    // "list" (listar/buscar todos) sigue bloqueado siempre, así que nadie
+    // puede navegar ni descubrir visitas de otras personas sin su código.
+    // -------------------------------------------------------------------
+    match /public_status/{id} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
+    }
+
     // Cualquier otra ruta no contemplada queda bloqueada por defecto.
     match /{document=**} {
       allow read, write: if false;
