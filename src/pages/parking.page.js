@@ -7,6 +7,7 @@ import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from 
 import { getProfile } from "../services/auth.service.js";
 import { navigate } from "../router.js";
 import { notificationsSupported, getPermission, isEnabled, enable, disable, notify } from "../utils/notify.js";
+import { whatsappLink } from "../utils/whatsapp.js";
 
 const TYPE_BADGE = {
   visitor: null,
@@ -116,6 +117,7 @@ function openEntryModal(space) {
   const nameInput = el("input", { class: "form-control", required: true });
   const idInput = el("input", { class: "form-control", required: true });
   const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
+  const phoneInput = el("input", { class: "form-control", type: "tel", placeholder: "Ej. 8888 8888" });
 
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
@@ -168,6 +170,7 @@ function openEntryModal(space) {
             visitorName: nameInput.value.trim(),
             visitorId: idInput.value.trim(),
             plate: plateInput.value.trim().toUpperCase(),
+            visitorPhone: phoneInput.value.trim(),
             destinationType: destTypeInput.value,
             destinationNumber: destResult.code,
             lobbyOverride: lobbySelect ? lobbySelect.value : null,
@@ -187,6 +190,7 @@ function openEntryModal(space) {
       field("Nombre", nameInput),
       field("Cédula", idInput),
       field("Placa", plateInput),
+      field("Teléfono (opcional, para avisarle por WhatsApp)", phoneInput),
       field("Torre", destField.towerSelect),
       field("Número de piso + unidad", destField.numberInput),
       destField.hint,
@@ -212,6 +216,21 @@ function openExitModal(space) {
     if (space.sessionId) showConsultaQr(space.number, buildConsultaUrl(space.sessionId), null);
   });
 
+  let whatsappBtn = null;
+  if (space.visitorPhone) {
+    const link = whatsappLink(
+      space.visitorPhone,
+      `Hola${space.visitorName ? " " + space.visitorName : ""}, le escribimos de seguridad Torres Paseo Colón: su tiempo de parqueo en el espacio ${space.number} está por vencer (o ya venció). Si necesita más tiempo, avísenos y con gusto se lo extendemos.`
+    );
+    if (link) {
+      whatsappBtn = el(
+        "a",
+        { href: link, target: "_blank", rel: "noopener", class: "btn btn--success btn--block" },
+        [icon("whatsapp", { size: 18 }), " Avisar por WhatsApp"]
+      );
+    }
+  }
+
   const content = el("div", { class: "stack" }, [
     el("div", { class: "modal__title" }, `Parqueo ${space.number}`),
     el("div", { class: "card" }, [
@@ -224,9 +243,10 @@ function openExitModal(space) {
     ]),
     el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
     qrBtn,
+    whatsappBtn,
     errorBox,
     confirmBtn,
-  ]);
+  ].filter(Boolean));
 
   const tickerStop = startLocalTicker(() => {
     timerEl.textContent = formatElapsed(space.entryAt);
