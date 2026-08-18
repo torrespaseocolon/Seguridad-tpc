@@ -2,21 +2,34 @@
 // Lee únicamente la colección public_status (sin datos personales) a
 // partir del código que viene en la URL (o que el visitante pega a mano).
 // Ver la nota de seguridad en firestore.rules, sección public_status.
+//
+// Doble uso del mismo QR: si quien lo abre es un visitante sin sesión, solo
+// ve su tiempo restante. Si lo abre un guardia/admin que YA tiene sesión
+// iniciada en ese mismo celular/tablet (la app de guardias), además le
+// aparece un botón para registrar la salida — sin tener que volver a la
+// pantalla de Parqueos y buscar el espacio. La protección real sigue siendo
+// del lado del servidor (firestore.rules): aunque alguien manipulara esta
+// página, registrar una salida real sigue exigiendo sesión de personal.
 import { db } from "./firebase/firebase-init.js";
 import {
   doc,
   onSnapshot,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
-import { el, clear } from "./utils/dom.js";
+import { el, clear, toast, confirmDialog } from "./utils/dom.js";
 import { icon } from "./utils/icons.js";
 import { initTheme } from "./utils/theme.js";
 import { formatDateTime, startLocalTicker, toMillis } from "./utils/time.js";
+import { subscribeAuth } from "./services/auth.service.js";
+import { registerExit, OperationError } from "./services/parking.service.js";
+import { friendlyError } from "./utils/errors.js";
 
 initTheme();
 
 const root = document.getElementById("consulta-root");
-let unsubscribe = null;
+let unsubscribeStatus = null;
 let stopTicker = null;
+let latestData = null;
+let staffProfile = null; // null = sin sesión de personal (o todavía no se sabe)
 
 function card(children) {
   return el("div", { class: "login-screen" }, [
@@ -118,6 +131,32 @@ function renderStatus(data) {
         el("div", { class: "alert alert--info" }, `Se le extendió el tiempo permitido en ${data.extendedMinutes} minutos adicionales.`)
       );
     }
+
+    if (staffProfile) {
+      const exitBtn = el("button", { class: "btn btn--danger btn--block btn--lg mt-md" }, "REGISTRAR SALIDA");
+      exitBtn.addEventListener("click", async () => {
+        const ok = await confirmDialog({
+          title: "Confirmar salida",
+          body: `¿Confirma la salida del vehículo del parqueo ${data.spaceNumber}? El espacio quedará disponible de inmediato.`,
+          confirmText: "Sí, registrar salida",
+          danger: true,
+        });
+        if (!ok) return;
+        exitBtn.disabled = true;
+        exitBtn.textContent = "GUARDANDO...";
+        try {
+          await registerExit(data.spaceNumber);
+          toast("Salida registrada.", "success");
+          // La propia consulta se actualiza sola (escucha en tiempo real).
+        } catch (err) {
+          toast(err instanceof OperationError ? err.message : friendlyError(err), "danger");
+          exitBtn.disabled = false;
+          exitBtn.textContent = "REGISTRAR SALIDA";
+        }
+      });
+      children.push(el("div", { class: "form-hint text-center" }, `Sesión de personal detectada (${staffProfile.name}) — solo por eso ves esta opción.`));
+      children.push(exitBtn);
+    }
   } else {
     if (stopTicker) {
       stopTicker();
@@ -131,21 +170,37 @@ function renderStatus(data) {
   root.appendChild(card(children));
 }
 
+function rerenderIfReady() {
+  if (latestData) renderStatus(latestData);
+}
+
 function loadStatus(id) {
   renderLoading();
-  if (unsubscribe) unsubscribe();
-  unsubscribe = onSnapshot(
+  if (unsubscribeStatus) unsubscribeStatus();
+  unsubscribeStatus = onSnapshot(
     doc(db, "public_status", id),
     (snap) => {
       if (!snap.exists()) {
+        latestData = null;
         renderNotFound();
         return;
       }
-      renderStatus(snap.data());
+      latestData = snap.data();
+      renderStatus(latestData);
     },
-    () => renderNotFound()
+    () => {
+      latestData = null;
+      renderNotFound();
+    }
   );
 }
+
+// Detecta, sin bloquear la carga de la consulta, si quien mira esta página
+// ya tiene sesión de guardia/admin abierta en este dispositivo.
+subscribeAuth((state) => {
+  staffProfile = state && state.profile ? state.profile : null;
+  rerenderIfReady();
+});
 
 const params = new URLSearchParams(window.location.search);
 const id = params.get("id");
