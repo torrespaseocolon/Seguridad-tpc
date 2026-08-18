@@ -43,6 +43,10 @@ export async function renderDemoTab(root) {
     ])
   );
 
+  const availabilityCard = el("div", { class: "card mb-md" }, "Comprobando parqueos de visitante libres...");
+  root.appendChild(availabilityCard);
+  checkAvailability(availabilityCard);
+
   const loadBtn = el("button", { class: "btn btn--primary btn--block btn--lg mb-md" }, [icon("plus", { size: 18 }), " CARGAR DATOS DE DEMOSTRACIÓN"]);
   const clearBtn = el("button", { class: "btn btn--danger btn--block btn--lg mb-md" }, [icon("close", { size: 18 }), " LIMPIAR DEMOSTRACIÓN"]);
   const logBox = el("div", { class: "stack" });
@@ -61,6 +65,7 @@ export async function renderDemoTab(root) {
       clear(loadBtn);
       loadBtn.appendChild(icon("plus", { size: 18 }));
       loadBtn.append(" CARGAR DATOS DE DEMOSTRACIÓN");
+      checkAvailability(availabilityCard);
     }
   });
 
@@ -84,6 +89,7 @@ export async function renderDemoTab(root) {
       clear(clearBtn);
       clearBtn.appendChild(icon("close", { size: 18 }));
       clearBtn.append(" LIMPIAR DEMOSTRACIÓN");
+      checkAvailability(availabilityCard);
     }
   });
 
@@ -110,6 +116,39 @@ async function findFreeSpaces(count) {
     .slice(0, count);
 }
 
+/**
+ * Muestra ANTES de cargar cuántos parqueos de visitante están libres ahora
+ * mismo, para no descubrir a mitad de la demo (o peor, en vivo frente a la
+ * junta) que faltaban espacios. Si hay menos de 3, casi siempre es porque
+ * quedaron espacios REALES ocupados por pruebas anteriores (no de demo) —
+ * eso hay que liberarlo a mano desde Parqueos o Administración →
+ * Correcciones, la demo nunca toca datos reales.
+ */
+async function checkAvailability(card) {
+  clear(card);
+  try {
+    const snap = await getDocs(query(collection(db, "parking_spaces"), orderBy("number")));
+    const spaces = snap.docs.map((d) => d.data());
+    const free = spaces.filter((s) => s.status === "free" && s.type === "visitor");
+    const occupiedNumbers = spaces.filter((s) => s.status === "occupied" && s.type === "visitor").map((s) => s.number);
+    const enough = free.length >= 3;
+    card.appendChild(
+      el("div", { class: "row", style: `align-items:flex-start; color:${enough ? "var(--color-success)" : "var(--color-danger)"};` }, [
+        icon(enough ? "check" : "warning", { size: 20 }),
+        el("div", {}, [
+          el("div", { style: "font-weight:700;" }, `${free.length} parqueo(s) de visitante libres ahora mismo (se necesitan 3 para la demo completa).`),
+          !enough
+            ? el("div", { class: "text-secondary", style: "margin-top:4px;" },
+                `Hay ${occupiedNumbers.length} parqueo(s) de visitante ocupados (${occupiedNumbers.join(", ") || "—"}). Si son de pruebas tuyas (no de una visita real), liberalos primero desde Parqueos (tocá el espacio → REGISTRAR SALIDA) o desde Administración → Correcciones si no recordás cuáles son.`)
+            : null,
+        ]),
+      ].filter(Boolean))
+    );
+  } catch (err) {
+    card.appendChild(el("div", { class: "text-secondary" }, "No se pudo comprobar la disponibilidad de parqueos."));
+  }
+}
+
 async function seedDemoData(log) {
   // Parqueos: 3 visitas al MISMO destino (Oficina A-801) para poder
   // demostrar en vivo que un 4to intento se bloquea por el límite de
@@ -122,12 +161,29 @@ async function seedDemoData(log) {
     { visitorName: "DEMO - Carlos Jiménez", visitorId: "0-0000-0002", plate: "DEMO002" },
     { visitorName: "DEMO - Luis Fernández", visitorId: "0-0000-0003", plate: "DEMO003" },
   ];
+
+  // Por si quedó algún parqueo demo ocupado de una carga anterior que no se
+  // limpió (por ejemplo, se cerró la pestaña a mitad de una presentación):
+  // se libera solo, antes de buscar espacios libres, para no competir por
+  // espacios con su propia carga anterior. Nunca toca parqueos reales
+  // (isDemo == false).
+  const leftoverSnap = await getDocs(
+    query(collection(db, "parking_spaces"), where("isDemo", "==", true), where("status", "==", "occupied"))
+  );
+  for (const d of leftoverSnap.docs) {
+    try {
+      await registerExit(d.data().number);
+    } catch (err) {
+      /* si ya se liberó por otro lado, no pasa nada */
+    }
+  }
+
   const freeSpaces = await findFreeSpaces(3);
   if (freeSpaces.length === 0) {
     log("No hay parqueos de visitante libres — se omite la parte de Parqueos.", false);
   } else {
     if (freeSpaces.length < 3) {
-      log(`Solo hay ${freeSpaces.length} parqueo(s) de visitante libres (se necesitan 3 para demostrar el límite completo). Se cargan los que hay.`, false);
+      log(`Solo hay ${freeSpaces.length} parqueo(s) de visitante libres (se necesitan 3 para demostrar el límite completo). Se cargan los que hay — liberá parqueos de prueba reales desde Parqueos o Correcciones para poder cargar los 3.`, false);
     }
     for (let i = 0; i < freeSpaces.length; i++) {
       const v = demoVisitors[i];
