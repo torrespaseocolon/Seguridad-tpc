@@ -25,8 +25,14 @@
   <script type="module">
     import("./src/consulta.js").catch((err) => {
       console.error("[SEGURIDAD TPC] Error al iniciar la consulta:", err);
+      var detail = (err && (err.message || err.name)) || String(err);
       document.getElementById("consulta-root").innerHTML =
-        '<div class="login-screen"><div class="login-card"><div class="card"><div class="alert alert--danger" style="margin-bottom:0;">No se pudo cargar la consulta. Intente de nuevo más tarde.</div></div></div></div>';
+        '<div class="login-screen"><div class="login-card"><div class="card">' +
+        '<div class="alert alert--danger">No se pudo cargar la consulta.<br><br><small>' +
+        detail.replace(/[<>&]/g, function (c) { return { "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]; }) +
+        '</small></div>' +
+        '<button class="btn btn--primary btn--block btn--lg" onclick="location.reload()">REINTENTAR</button>' +
+        '</div></div></div>';
     });
   </script>
 </body>

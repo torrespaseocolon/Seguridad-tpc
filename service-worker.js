@@ -14,7 +14,13 @@
 // con el número de CACHE_NAME incrementado (ver README, "Actualizaciones
 // futuras") para que los dispositivos descarguen los archivos nuevos en
 // lugar de seguir usando la copia guardada.
-const CACHE_NAME = "seguridad-tpc-v12";
+const CACHE_NAME = "seguridad-tpc-v13";
+
+// consulta.html es una página pública para visitantes ocasionales (la abren
+// desde un código QR, casi nunca la vuelven a visitar) — no le aporta nada
+// quedar guardada en caché, así que se deja pasar siempre directo a la red
+// para evitar que un dispositivo desconocido quede con una copia vieja.
+const NO_CACHE_SUFFIXES = ["/consulta.html", "/src/consulta.js", "/src/utils/qr.js"];
 
 const APP_SHELL = [
   "./",
@@ -50,6 +56,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // nunca intercepta Firebase ni el CDN
+  if (NO_CACHE_SUFFIXES.some((suffix) => url.pathname.endsWith(suffix))) return; // siempre red directa
 
   event.respondWith(
     caches.match(request).then((cached) => {
