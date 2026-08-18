@@ -16,6 +16,13 @@ export function elapsedMinutes(entryAt) {
   return Math.floor((Date.now() - start) / 60000);
 }
 
+/** Días completos transcurridos desde un Timestamp/Date — para avisos de "pendiente hace mucho". */
+export function elapsedDays(value) {
+  const start = toMillis(value);
+  if (!start) return 0;
+  return Math.floor((Date.now() - start) / 86400000);
+}
+
 /** Formato HH:MM:SS a partir de una hora de inicio. */
 export function formatElapsed(entryAt) {
   const start = toMillis(entryAt);

@@ -2,13 +2,19 @@ import { el, clear, toast, confirmDialog, openModal, loadingState, emptyState } 
 import { icon } from "../utils/icons.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { createPackage, fetchPendingPackages, deliverPackage } from "../services/packages.service.js";
-import { formatDateTime } from "../utils/time.js";
+import { formatDateTime, elapsedDays } from "../utils/time.js";
 import { navigate } from "../router.js";
 import { friendlyError } from "../utils/errors.js";
+
+// Recomendación por defecto (7 días): tiempo razonable para que un paquete
+// siga sin recogerse antes de que valga la pena avisarle al residente. Es
+// solo un aviso visual para el guardia/administración — no bloquea nada.
+const OLD_PENDING_DAYS = 7;
 
 export function renderPackages(root) {
   clear(root);
   const list = el("div", { class: "stack" });
+  const searchInput = el("input", { class: "form-control", placeholder: "Buscar por nombre o apartamento..." });
 
   root.appendChild(
     el("div", { class: "back-bar" }, [
@@ -22,19 +28,31 @@ export function renderPackages(root) {
       el("button", { class: "btn btn--secondary", onclick: load }, [icon("refresh", { size: 18 }), " Actualizar"]),
     ])
   );
+  root.appendChild(el("div", { class: "form-group" }, [searchInput]));
   root.appendChild(list);
+
+  let allPackages = [];
+  searchInput.addEventListener("input", renderList);
+
+  function renderList() {
+    clear(list);
+    const term = searchInput.value.trim().toLowerCase();
+    const filtered = term
+      ? allPackages.filter((p) => (p.recipientName || "").toLowerCase().includes(term) || (p.apartment || "").toLowerCase().includes(term))
+      : allPackages;
+    if (filtered.length === 0) {
+      list.appendChild(emptyState("package", term ? "Ningún paquete pendiente coincide con la búsqueda." : "No hay paquetes pendientes de entrega."));
+      return;
+    }
+    for (const pkg of filtered) list.appendChild(renderPackageCard(pkg, load));
+  }
 
   async function load() {
     clear(list);
     list.appendChild(loadingState("Cargando paquetes pendientes..."));
     try {
-      const packages = await fetchPendingPackages();
-      clear(list);
-      if (packages.length === 0) {
-        list.appendChild(emptyState("package", "No hay paquetes pendientes de entrega."));
-        return;
-      }
-      for (const pkg of packages) list.appendChild(renderPackageCard(pkg, load));
+      allPackages = await fetchPendingPackages();
+      renderList();
     } catch (err) {
       clear(list);
       list.appendChild(emptyState("warning", friendlyError(err)));
@@ -45,6 +63,8 @@ export function renderPackages(root) {
 }
 
 function renderPackageCard(pkg, reload) {
+  const days = elapsedDays(pkg.createdAt);
+  const isOld = days >= OLD_PENDING_DAYS;
   const deliverBtn = el("button", { class: "btn btn--success btn--block" }, "ENTREGADO");
   deliverBtn.addEventListener("click", async () => {
     const ok = await confirmDialog({
@@ -66,7 +86,7 @@ function renderPackageCard(pkg, reload) {
     }
   });
 
-  return el("div", { class: "card" }, [
+  return el("div", { class: "card", style: isOld ? "border-color:var(--color-danger);" : "" }, [
     el("div", { class: "row row--between" }, [
       el("strong", {}, `Apt. ${pkg.apartment} — ${pkg.recipientName}`),
       el("span", { class: "badge badge--pending" }, "PENDIENTE"),
@@ -74,6 +94,7 @@ function renderPackageCard(pkg, reload) {
     el("div", { class: "text-secondary mt-md" }, `Empresa: ${pkg.courier}${pkg.trackingNumber ? " · Guía: " + pkg.trackingNumber : ""}`),
     pkg.notes ? el("div", { class: "text-secondary" }, `Nota: ${pkg.notes}`) : null,
     el("div", { class: "text-faint" }, `Recibido: ${formatDateTime(pkg.createdAt)} · ${pkg.createdByName || ""}`),
+    isOld ? el("div", { class: "badge badge--occupied mt-md" }, `⚠ Pendiente hace ${days} días`) : null,
     el("div", { class: "mt-md" }, [deliverBtn]),
   ].filter(Boolean));
 }

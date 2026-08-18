@@ -38,7 +38,7 @@ export async function notify(title, options) {
   if (!isEnabled()) return;
   try {
     const reg = await navigator.serviceWorker.ready;
-    await reg.showNotification(title, { icon: "./icons/logo-placeholder.svg", badge: "./icons/logo-placeholder.svg", ...options });
+    await reg.showNotification(title, { icon: "./icons/logo-square.svg", badge: "./icons/logo-square.svg", ...options });
   } catch (err) {
     console.error("[SEGURIDAD TPC] No se pudo mostrar la notificación:", err);
   }

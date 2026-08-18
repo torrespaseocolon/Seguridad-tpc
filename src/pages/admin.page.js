@@ -1,6 +1,7 @@
 import { el, clear } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
 import { navigate } from "../router.js";
+import { getProfile } from "../services/auth.service.js";
 import { renderDashboardTab } from "./admin/dashboard.tab.js";
 import { renderUsersTab } from "./admin/users.tab.js";
 import { renderParkingConfigTab } from "./admin/parking-config.tab.js";
@@ -21,12 +22,22 @@ const TABS = [
   { id: "demo", label: "Demostración", render: renderDemoTab },
 ];
 
+// El rol "viewer" (solo lectura) solo puede operar/ver estas dos pestañas —
+// las reglas de Firestore ya le bloquean cualquier escritura, pero además
+// ocultamos el resto de la interfaz para que no vea botones que de todas
+// formas no puede usar.
+const VIEWER_TAB_IDS = ["dashboard", "reports"];
+
 export function renderAdmin(root, params) {
   clear(root);
+  const profile = getProfile();
+  const isViewer = profile.role === "viewer";
+  const tabs = isViewer ? TABS.filter((t) => VIEWER_TAB_IDS.includes(t.id)) : TABS;
+
   root.appendChild(
     el("div", { class: "back-bar" }, [
       el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
-      el("h2", { class: "row" }, [icon("admin"), "Administración"]),
+      el("h2", { class: "row" }, [icon("admin"), isViewer ? "Reportes" : "Administración"]),
     ])
   );
 
@@ -35,12 +46,12 @@ export function renderAdmin(root, params) {
   root.appendChild(tabBar);
   root.appendChild(content);
 
-  let activeTab = params.get("tab") || "dashboard";
+  let activeTab = tabs.some((t) => t.id === params.get("tab")) ? params.get("tab") : tabs[0].id;
   let currentCleanup = null;
 
   function renderTabBar() {
     clear(tabBar);
-    for (const tab of TABS) {
+    for (const tab of tabs) {
       tabBar.appendChild(
         el(
           "button",
@@ -67,7 +78,7 @@ export function renderAdmin(root, params) {
     activeTab = id;
     renderTabBar();
     clear(content);
-    const tab = TABS.find((t) => t.id === id);
+    const tab = tabs.find((t) => t.id === id);
     const result = tab.render(content);
     if (result && typeof result.then === "function") {
       result.then((cleanup) => {

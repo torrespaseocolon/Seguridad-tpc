@@ -30,6 +30,7 @@ function renderUserCard(user, reload) {
   const roleSelect = el("select", { class: "form-control" }, [
     el("option", { value: "guard", selected: user.role === "guard" }, "Guardia"),
     el("option", { value: "admin", selected: user.role === "admin" }, "Administrador"),
+    el("option", { value: "viewer", selected: user.role === "viewer" }, "Solo lectura (Panel y Reportes)"),
   ]);
   const lobbySelect = el("select", { class: "form-control" }, [
     el("option", { value: "", selected: !user.lobby }, "Sin lobby asignado"),
@@ -125,6 +126,7 @@ function openCreateModal(reload) {
   const roleSelect = el("select", { class: "form-control" }, [
     el("option", { value: "guard" }, "Guardia"),
     el("option", { value: "admin" }, "Administrador"),
+    el("option", { value: "viewer" }, "Solo lectura (Panel y Reportes)"),
   ]);
   const lobbySelect = el("select", { class: "form-control" }, [
     el("option", { value: "" }, "Sin lobby asignado"),

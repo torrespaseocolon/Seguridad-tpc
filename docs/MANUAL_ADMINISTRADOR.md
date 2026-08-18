@@ -7,10 +7,17 @@ parte superior.
 
 ## Crear usuarios
 **Administración → Usuarios → + CREAR USUARIO.** Completa nombre, correo, una contraseña
-temporal (mínimo 6 caracteres), rol (Administrador o Guardia) y lobby. Entrégale el correo y la
-contraseña a la persona en privado. Puede cambiarla luego desde la pantalla de inicio de sesión
-(función "olvidé mi contraseña" — si no está visible, contáctame para agregarla en una futura
-actualización).
+temporal (mínimo 6 caracteres), rol y lobby. Entrégale el correo y la contraseña a la persona en
+privado. Puede cambiarla luego desde la pantalla de inicio de sesión (función "olvidé mi
+contraseña" — si no está visible, contáctame para agregarla en una futura actualización).
+
+Los roles disponibles son:
+- **Administrador**: acceso completo, incluyendo Usuarios y configuración.
+- **Guardia**: solo las pantallas operativas (Parqueos, Paquetes, Objetos, Tarjetas/Stickers,
+  Actividad) del lobby que se le asigne.
+- **Solo lectura**: pensado para junta directiva u otras personas que solo necesitan ver el Panel
+  y los Reportes, sin poder operar nada (ni siquiera puede abrir Parqueos, Paquetes, etc.). No
+  necesita lobby asignado.
 
 ## Asignar o cambiar el lobby de un guardia
 **Administración → Usuarios**, elige el lobby en el selector junto al usuario, presiona **Guardar

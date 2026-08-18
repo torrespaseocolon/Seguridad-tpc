@@ -18,10 +18,15 @@ export function renderObjects(root) {
   );
 
   let tab = "available";
+  let allAvailable = [];
+  let allLoaned = [];
   const tabBar = el("div", { class: "row", style: "margin-bottom:16px;" });
+  const searchInput = el("input", { class: "form-control", placeholder: "Buscar..." });
   const list = el("div", { class: "stack" });
   root.appendChild(tabBar);
+  root.appendChild(el("div", { class: "form-group" }, [searchInput]));
   root.appendChild(list);
+  searchInput.addEventListener("input", renderList);
 
   function renderTabs() {
     clear(tabBar);
@@ -43,8 +48,33 @@ export function renderObjects(root) {
 
   function setTab(next) {
     tab = next;
+    searchInput.value = "";
     renderTabs();
     load();
+  }
+
+  function renderList() {
+    clear(list);
+    const term = searchInput.value.trim().toLowerCase();
+    if (tab === "available") {
+      const filtered = term
+        ? allAvailable.filter((o) => (o.name || "").toLowerCase().includes(term) || (o.category || "").toLowerCase().includes(term))
+        : allAvailable;
+      if (filtered.length === 0) {
+        list.appendChild(emptyState("tools", term ? "Ningún objeto disponible coincide con la búsqueda." : "No hay objetos disponibles en este momento."));
+        return;
+      }
+      for (const obj of filtered) list.appendChild(renderObjectCard(obj, load));
+    } else {
+      const filtered = term
+        ? allLoaned.filter((l) => (l.objectName || "").toLowerCase().includes(term) || (l.borrowerName || "").toLowerCase().includes(term) || (l.apartment || "").toLowerCase().includes(term))
+        : allLoaned;
+      if (filtered.length === 0) {
+        list.appendChild(emptyState("tools", term ? "Ningún préstamo coincide con la búsqueda." : "No hay objetos prestados actualmente."));
+        return;
+      }
+      for (const loan of filtered) list.appendChild(renderLoanCard(loan, load));
+    }
   }
 
   async function load() {
@@ -53,22 +83,11 @@ export function renderObjects(root) {
     try {
       if (tab === "available") {
         const objects = await fetchActiveObjects();
-        clear(list);
-        const available = objects.filter((o) => o.availableQuantity > 0);
-        if (available.length === 0) {
-          list.appendChild(emptyState("tools", "No hay objetos disponibles en este momento."));
-          return;
-        }
-        for (const obj of available) list.appendChild(renderObjectCard(obj, load));
+        allAvailable = objects.filter((o) => o.availableQuantity > 0);
       } else {
-        const loans = await fetchActiveLoans();
-        clear(list);
-        if (loans.length === 0) {
-          list.appendChild(emptyState("tools", "No hay objetos prestados actualmente."));
-          return;
-        }
-        for (const loan of loans) list.appendChild(renderLoanCard(loan, load));
+        allLoaned = await fetchActiveLoans();
       }
+      renderList();
     } catch (err) {
       clear(list);
       list.appendChild(emptyState("warning", friendlyError(err)));

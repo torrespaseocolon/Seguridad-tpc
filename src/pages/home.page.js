@@ -22,9 +22,17 @@ export function renderHome(root) {
   clear(root);
   const profile = getProfile();
 
-  const tiles = TILES.slice();
-  if (profile.role === "admin") {
-    tiles.push({ path: "/admin", icon: "admin", label: "Administración" });
+  let tiles;
+  if (profile.role === "viewer") {
+    // Solo lectura: no tiene sentido ofrecerle las pantallas operativas
+    // (parqueos, paquetes...) ya que no puede registrar nada ahí — solo ve
+    // el Panel y los Reportes dentro de Administración.
+    tiles = [{ path: "/admin", icon: "admin", label: "Reportes" }];
+  } else {
+    tiles = TILES.slice();
+    if (profile.role === "admin") {
+      tiles.push({ path: "/admin", icon: "admin", label: "Administración" });
+    }
   }
 
   const grid = el("div", { class: "menu-grid" });

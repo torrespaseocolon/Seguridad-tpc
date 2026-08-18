@@ -231,9 +231,10 @@ alternativa más rápida, se recomienda usar la app de escritorio gratuita **Git
 1. Espera 1-2 minutos después del PASO 13.
 2. Abre en tu navegador la dirección que te dio GitHub Pages (por ejemplo
    `https://TU-USUARIO.github.io/seguridad-tpc/`).
-3. **Qué debería aparecer:** la pantalla de inicio de sesión de SEGURIDAD TPC, con el marcador
-   "LOGO TPC" y los campos de correo y contraseña. Todavía no puedes entrar porque no existe
-   ningún usuario — eso es lo siguiente.
+3. **Qué debería aparecer:** la pantalla de inicio de sesión de SEGURIDAD TPC, con el logo de
+   Torres Paseo Colón y los campos de correo y contraseña. Todavía no puedes entrar porque no
+   existe ningún usuario — eso es lo siguiente. (Si en vez del logo ves el texto "LOGO TPC", es
+   que falta el archivo `icons/logo.png` — revisa que se haya subido al repositorio.)
 
 **Si aparece una pantalla en blanco:** abre las herramientas de desarrollador (F12) → pestaña
 "Console" y busca un mensaje en rojo. Si dice algo sobre `firebase-config.js`, revisa el PASO 11.
@@ -438,7 +439,7 @@ base de datos son sistemas completamente separados.
 | Quiero cambiar... | Abre este archivo | Qué buscar / cambiar | Qué NO tocar |
 |---|---|---|---|
 | Colores | `src/styles/variables.css` | Los valores como `#2f6690` junto a cada `--color-...` | Los nombres de las variables (`--color-primary`, etc.) — otros archivos los usan por nombre |
-| Logo | `icons/logo-placeholder.svg` (o agrega `icons/icon-192.png` e `icons/icon-512.png`) | Reemplaza el archivo por el logo oficial (mismo nombre, o actualiza las rutas en `index.html` y `manifest.json`) | El tamaño recomendado es cuadrado, mínimo 512×512 px |
+| Logo | `icons/logo.png` (el que se ve en el login y el encabezado) e `icons/logo-square.svg` (el ícono cuadrado de la app/favicon/notificaciones, generado a partir del mismo logo) | Reemplaza `icons/logo.png` por el logo oficial actualizado; si cambia, hay que regenerar también `icons/logo-square.svg` (pedíselo a Claude, o cualquier editor de imágenes: mismo logo centrado sobre un cuadrado, con margen alrededor) | El tamaño recomendado del logo es horizontal, fondo transparente; el ícono cuadrado necesita margen alrededor del logo para no verse cortado en los íconos redondos/circulares de Android |
 | Nombre del sistema | `index.html` (`<title>`) y `manifest.json` (`name`, `short_name`) | El texto entre comillas | La estructura del JSON en `manifest.json` (comas, llaves) |
 | Parqueos (tipo, discapacidad) | Dentro de la app: **Administración → Parqueos** | No requiere editar código | — |
 | Tiempo máximo | Dentro de la app: **Administración → Parqueos** | No requiere editar código | — |

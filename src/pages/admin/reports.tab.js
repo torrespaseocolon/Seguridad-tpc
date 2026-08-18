@@ -7,6 +7,8 @@ import { fetchAccessItemHistory } from "../../services/access-items.service.js";
 import { formatDateTime, formatMinutesDuration } from "../../utils/time.js";
 import { downloadCsv } from "../../utils/csv.js";
 import { friendlyError } from "../../utils/errors.js";
+import { barChart, bucketByDay } from "../../utils/chart.js";
+import { createDestinationField } from "../../utils/destination-field.js";
 
 const REPORTS = [
   { id: "parking", label: "Parqueos" },
@@ -32,23 +34,31 @@ export function renderReportsTab(root) {
 
   const fromInput = el("input", { class: "form-control", type: "date" });
   const toInput = el("input", { class: "form-control", type: "date" });
-  const clearBtn = el("button", { class: "btn btn--secondary" }, "Quitar filtro");
+  const destField = createDestinationField({ required: false });
+  const clearBtn = el("button", { class: "btn btn--secondary" }, "Quitar filtros");
   const filterBar = el("div", { class: "card mb-md" }, [
-    el("div", { class: "card__title" }, "Filtrar por fecha (opcional)"),
+    el("div", { class: "card__title" }, "Filtrar (opcional)"),
     el("div", { class: "row", style: "flex-wrap:wrap; gap:12px;" }, [
       field("Desde", fromInput),
       field("Hasta", toInput),
+      field("Torre", destField.towerSelect),
+      field("Piso + unidad", destField.numberInput),
       el("div", { style: "align-self:flex-end;" }, [clearBtn]),
     ]),
-    el("div", { class: "form-hint" }, "Sin fechas, se muestran los registros más recientes. El plan gratuito no borra historial por antigüedad: podés pedir cualquier rango desde que el sistema está en uso."),
+    destField.hint,
+    el("div", { class: "form-hint" }, "Sin fechas, se muestran los registros más recientes. El plan gratuito no borra historial por antigüedad: podés pedir cualquier rango desde que el sistema está en uso. El filtro de apartamento/oficina aplica sobre los registros ya traídos, no cuesta lecturas extra."),
   ]);
   clearBtn.addEventListener("click", () => {
     fromInput.value = "";
     toInput.value = "";
+    destField.numberInput.value = "";
+    destField.refresh();
     load();
   });
   fromInput.addEventListener("change", load);
   toInput.addEventListener("change", load);
+  destField.towerSelect.addEventListener("change", load);
+  destField.numberInput.addEventListener("change", load);
 
   const content = el("div", {});
   root.appendChild(tabBar);
@@ -58,7 +68,9 @@ export function renderReportsTab(root) {
   function getRange() {
     const from = fromInput.value ? new Date(`${fromInput.value}T00:00:00`) : null;
     const to = toInput.value ? new Date(`${toInput.value}T23:59:59.999`) : null;
-    return { from, to };
+    const destResult = destField.getResult();
+    const destCode = destResult.ok ? destResult.code : "";
+    return { from, to, destCode };
   }
 
   function renderTabBar() {
@@ -98,9 +110,16 @@ function maxFor(defaultMax, range) {
   return range.from || range.to ? RANGE_MAX : defaultMax;
 }
 
+/** Filtra en el navegador (ya se trajeron los datos para el CSV) por el código exacto de apartamento/oficina. */
+function filterByDest(rows, destCode, field) {
+  return destCode ? rows.filter((r) => r[field] === destCode) : rows;
+}
+
 async function renderParking(content, range) {
-  const rows = await fetchParkingHistory({ max: maxFor(DEFAULT_MAX, range), ...range });
+  const rows = filterByDest(await fetchParkingHistory({ max: maxFor(DEFAULT_MAX, range), ...range }), range.destCode, "destinationNumber");
   clear(content);
+  content.appendChild(el("div", { class: "card__title" }, "Entradas por día"));
+  content.appendChild(barChart(bucketByDay(rows, "entryAt")));
   content.appendChild(exportButton("historial_parqueos.csv", rows.map((r) => ({
     parqueo: r.spaceNumber, nombre: r.visitorName, cedula: r.visitorId, placa: r.plate,
     destino: `${r.destinationType === "office" ? "Oficina" : "Apto"} ${r.destinationNumber}`,
@@ -118,8 +137,10 @@ async function renderParking(content, range) {
 }
 
 async function renderPackages(content, range) {
-  const rows = await fetchPackageHistory(maxFor(DEFAULT_MAX, range), range);
+  const rows = filterByDest(await fetchPackageHistory(maxFor(DEFAULT_MAX, range), range), range.destCode, "apartment");
   clear(content);
+  content.appendChild(el("div", { class: "card__title" }, "Paquetes recibidos por día"));
+  content.appendChild(barChart(bucketByDay(rows, "createdAt")));
   content.appendChild(exportButton("historial_paquetes.csv", rows.map((r) => ({
     apartamento: r.apartment, destinatario: r.recipientName, empresa: r.courier, estado: r.status,
     recibido: formatDateTime(r.createdAt), guardia_recibio: r.createdByName, entregado: formatDateTime(r.deliveredAt), guardia_entrego: r.deliveredByName,
@@ -128,8 +149,10 @@ async function renderPackages(content, range) {
 }
 
 async function renderLoans(content, range) {
-  const rows = await fetchLoanHistory(maxFor(DEFAULT_MAX, range), range);
+  const rows = filterByDest(await fetchLoanHistory(maxFor(DEFAULT_MAX, range), range), range.destCode, "apartment");
   clear(content);
+  content.appendChild(el("div", { class: "card__title" }, "Préstamos por día"));
+  content.appendChild(barChart(bucketByDay(rows, "loanedAt")));
   content.appendChild(exportButton("historial_prestamos.csv", rows.map((r) => ({
     objeto: r.objectName, persona: r.borrowerName, tipo: r.borrowerType, apartamento: r.apartment,
     prestado: formatDateTime(r.loanedAt), guardia_presto: r.loanedByName, devuelto: formatDateTime(r.returnedAt), guardia_recibio: r.returnedByName, estado_objeto: r.returnCondition,
@@ -138,8 +161,10 @@ async function renderLoans(content, range) {
 }
 
 async function renderAccess(content, range) {
-  const rows = await fetchAccessItemHistory(maxFor(DEFAULT_MAX, range), range);
+  const rows = filterByDest(await fetchAccessItemHistory(maxFor(DEFAULT_MAX, range), range), range.destCode, "apartment");
   clear(content);
+  content.appendChild(el("div", { class: "card__title" }, "Tarjetas/stickers registrados por día"));
+  content.appendChild(barChart(bucketByDay(rows, "createdAt")));
   content.appendChild(exportButton("historial_tarjetas.csv", rows.map((r) => ({
     tipo: r.type, nombre: r.recipientName, apartamento: r.apartment, torre: r.tower, lobby: r.dropLobby,
     registrado: formatDateTime(r.createdAt), admin: r.createdByName, entregado: formatDateTime(r.deliveredAt), guardia_entrego: r.deliveredByName,
@@ -148,15 +173,22 @@ async function renderAccess(content, range) {
 }
 
 async function renderByGuard(content, range) {
-  const rows = await fetchParkingHistory({ max: maxFor(DEFAULT_MAX_BY_GUARD, range), ...range });
+  const rows = filterByDest(await fetchParkingHistory({ max: maxFor(DEFAULT_MAX_BY_GUARD, range), ...range }), range.destCode, "destinationNumber");
   const byGuard = {};
   for (const r of rows) {
     const key = r.entryGuardName || "—";
     byGuard[key] = (byGuard[key] || 0) + 1;
   }
+  const sorted = Object.entries(byGuard).sort((a, b) => b[1] - a[1]);
   clear(content);
+  content.appendChild(el("div", { class: "card__title" }, "Entradas por guardia"));
+  const top = sorted.slice(0, 8);
+  content.appendChild(barChart({
+    labels: top.map(([name]) => (name.length > 12 ? name.slice(0, 11) + "…" : name)),
+    values: top.map(([, count]) => count),
+  }));
   const list = el("div", { class: "stack" });
-  for (const [name, count] of Object.entries(byGuard).sort((a, b) => b[1] - a[1])) {
+  for (const [name, count] of sorted) {
     list.appendChild(el("div", { class: "card row row--between" }, [el("strong", {}, name), el("span", {}, `${count} entradas registradas`)]));
   }
   content.appendChild(el("div", { class: "form-hint mb-md" }, `Basado en las últimas ${maxFor(DEFAULT_MAX_BY_GUARD, range)} entradas de parqueo (según el filtro de fecha).`));

@@ -74,7 +74,7 @@ function updateHeaderUser(profile) {
   const box = document.getElementById("header-user-info");
   if (!box) return;
   clear(box);
-  const roleLabel = profile.role === "admin" ? "Administrador" : "Guardia";
+  const roleLabel = { admin: "Administrador", guard: "Guardia", viewer: "Solo lectura" }[profile.role] || profile.role;
   const lobbyLabel = profile.lobby ? `Lobby ${profile.lobby}` : "Sin lobby asignado";
   connBadgeEl = el("span", { class: "conn-badge conn-badge--online" }, [
     el("span", { class: "conn-dot" }),
@@ -121,6 +121,12 @@ function registerRoutes() {
   setRouteGuard((path) => {
     const profile = getProfile();
     if (!profile) return path;
+    // Solo lectura: únicamente puede estar en "/" (menú) o "/admin" (donde
+    // ve el Panel y Reportes, sin poder operar nada) — cualquier otra
+    // pantalla operativa la redirige de vuelta al menú.
+    if (profile.role === "viewer") {
+      return path === "/" || path.startsWith("/admin") ? null : "/";
+    }
     if (path.startsWith("/admin") && profile.role !== "admin") return "/";
     return null;
   });

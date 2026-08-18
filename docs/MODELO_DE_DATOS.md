@@ -39,7 +39,7 @@ Firebase Authentication.
 |---|---|---|
 | `name` | string | Nombre completo |
 | `email` | string | Correo (igual al de Authentication) |
-| `role` | string | `"admin"` o `"guard"` |
+| `role` | string | `"admin"`, `"guard"` o `"viewer"` (solo lectura: ve el Panel y Reportes de Administración, no puede operar nada — ver `firestore.rules`) |
 | `lobby` | string | `"A"`, `"B"` o `null` (para admins que no operan un lobby) |
 | `active` | boolean | Si es `false`, la persona no puede usar el sistema aunque tenga login válido |
 | `createdAt` / `createdBy` | timestamp / string | Auditoría de creación |
