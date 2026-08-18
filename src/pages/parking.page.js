@@ -6,6 +6,7 @@ import { qrImageUrl } from "../utils/qr.js";
 import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
 import { getProfile } from "../services/auth.service.js";
 import { navigate } from "../router.js";
+import { notificationsSupported, getPermission, isEnabled, enable, disable, notify } from "../utils/notify.js";
 
 const TYPE_BADGE = {
   visitor: null,
@@ -15,10 +16,13 @@ const TYPE_BADGE = {
 
 export function renderParking(root) {
   clear(root);
+
+  const notifyBtn = buildNotifyToggle();
   root.appendChild(
     el("div", { class: "back-bar" }, [
       el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
       el("h2", { class: "row" }, [icon("parking"), "Parqueos de visita"]),
+      notifyBtn,
     ])
   );
 
@@ -26,6 +30,7 @@ export function renderParking(root) {
   root.appendChild(grid);
 
   let spaces = [];
+  const notifiedSpaces = new Set();
 
   function renderGrid() {
     clear(grid);
@@ -37,10 +42,21 @@ export function renderParking(root) {
       if (space.status !== "occupied") continue;
       const timerEl = document.getElementById(`timer-${space.number}`);
       const cardEl = document.getElementById(`space-${space.number}`);
-      if (!timerEl || !cardEl) continue;
-      timerEl.textContent = formatElapsed(space.entryAt);
       const mins = elapsedMinutes(space.entryAt);
       const overdue = space.maxMinutesAtEntry && mins > space.maxMinutesAtEntry;
+
+      if (overdue && !notifiedSpaces.has(space.number)) {
+        notifiedSpaces.add(space.number);
+        notify(`Parqueo ${space.number} — tiempo vencido`, {
+          body: `${space.visitorName || "El vehículo"} (${space.plate || "sin placa"}) ya superó el tiempo permitido.`,
+          tag: `parking-overdue-${space.number}`,
+        });
+      } else if (!overdue) {
+        notifiedSpaces.delete(space.number);
+      }
+
+      if (!timerEl || !cardEl) continue;
+      timerEl.textContent = formatElapsed(space.entryAt);
       cardEl.classList.toggle("space-card--overdue", !!overdue);
       timerEl.classList.toggle("timer--overdue", !!overdue);
     }
@@ -241,6 +257,52 @@ function openExitModal(space) {
       confirmBtn.textContent = "REGISTRAR SALIDA";
     }
   });
+}
+
+/**
+ * Botón para activar/silenciar los avisos del sistema operativo cuando un
+ * parqueo se pasa del tiempo permitido. Solo funciona mientras esta
+ * pantalla está abierta (ver nota en utils/notify.js) — es el nivel gratis
+ * de notificaciones, sin ningún servicio de pago de por medio.
+ */
+function buildNotifyToggle() {
+  if (!notificationsSupported()) return el("span", {});
+
+  const btn = el("button", { class: "btn btn--secondary", style: "margin-left:auto;", title: "Avisos de tiempo vencido" });
+
+  function refresh() {
+    clear(btn);
+    const permission = getPermission();
+    if (permission === "denied") {
+      btn.appendChild(icon("bellOff", { size: 18 }));
+      btn.title = "Notificaciones bloqueadas por el navegador. Habilítelas desde la configuración del sitio.";
+      btn.disabled = false;
+    } else if (isEnabled()) {
+      btn.appendChild(icon("bell", { size: 18 }));
+      btn.title = "Avisos activados. Tocar para silenciar.";
+    } else {
+      btn.appendChild(icon("bellOff", { size: 18 }));
+      btn.title = "Tocar para activar avisos cuando un parqueo se pase del tiempo.";
+    }
+  }
+
+  btn.addEventListener("click", async () => {
+    if (getPermission() === "denied") {
+      toast("Las notificaciones están bloqueadas para este sitio. Actívelas desde la configuración del navegador.", "info");
+      return;
+    }
+    if (isEnabled()) {
+      disable();
+      toast("Avisos silenciados.", "info");
+    } else {
+      const ok = await enable();
+      toast(ok ? "Avisos activados." : "No se pudo activar el permiso de notificaciones.", ok ? "success" : "danger");
+    }
+    refresh();
+  });
+
+  refresh();
+  return btn;
 }
 
 /** Muestra el código QR de consulta pública para que el guardia se lo enseñe al visitante. */
