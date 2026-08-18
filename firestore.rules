@@ -118,7 +118,14 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
-      allow delete: if false;
+      // Solo se puede borrar un registro marcado como demostración (isDemo:
+      // true) — así "Limpiar demostración" puede purgarlos por completo sin
+      // abrir una puerta de borrado para parqueos reales (la auditoría de
+      // datos reales se mantiene intacta e inmutable).
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        resource.data.isDemo == true;
 
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
@@ -152,7 +159,12 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
-      allow delete: if false;
+      // Solo se puede borrar un paquete marcado como demostración (isDemo:
+      // true) — ver nota igual en parking_sessions más arriba.
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        resource.data.isDemo == true;
 
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
@@ -187,7 +199,16 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow delete: if false;
+      // A diferencia de las demás colecciones, aquí SÍ se permite borrar
+      // cualquier objeto (no solo los de demostración): es una capacidad
+      // general de administración del catálogo, pedida explícitamente para
+      // poder quitar objetos de la lista, no solo desactivarlos. Los
+      // préstamos ya hechos (object_loans) conservan el nombre del objeto
+      // guardado en el propio préstamo, así que el historial sigue siendo
+      // legible aunque el objeto ya no exista.
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
       allow update: if isSignedIn() && (
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
@@ -210,7 +231,12 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard');
-      allow delete: if false;
+      // Solo se puede borrar un préstamo marcado como demostración (isDemo:
+      // true) — ver nota igual en parking_sessions más arriba.
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        resource.data.isDemo == true;
 
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
@@ -244,7 +270,12 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow delete: if false;
+      // Solo se puede borrar una tarjeta/sticker marcado como demostración
+      // (isDemo: true) — ver nota igual en parking_sessions más arriba.
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        resource.data.isDemo == true;
 
       allow update: if isSignedIn() && (
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&

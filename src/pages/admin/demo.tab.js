@@ -1,24 +1,32 @@
 // Pestaña de Demostración — pensada para preparar una presentación en vivo
 // (por ejemplo ante la junta directiva) sin tener que escribir datos falsos
-// a mano frente a nadie. Todo lo que crea queda marcado con isDemo:true, y
-// "Limpiar demostración" lo resuelve todo con las MISMAS acciones normales
-// del sistema (registrar salida, entregar, devolver) — nunca borra nada de
-// la base de datos, así que el historial de auditoría queda intacto y
-// honesto (se puede ver después que fue una demo).
+// a mano frente a nadie. Todo lo que crea queda marcado con isDemo:true.
+// "Limpiar demostración" ELIMINA por completo todo lo marcado como demo
+// (parqueos, paquetes, objetos, préstamos y tarjetas), sin importar en qué
+// estado haya quedado durante la presentación (por ejemplo, aunque ya se
+// haya tocado "entregar" o "devolver" en vivo) — así nunca queda basura de
+// demostración mezclada con los datos reales. Esto es una excepción
+// deliberada a la regla general del resto de la app de "nunca borrar, solo
+// resolver": las reglas de Firestore (firestore.rules) solo permiten borrar
+// documentos donde isDemo == true, así que los datos reales siguen
+// protegidos contra borrado pase lo que pase aquí.
 import { el, clear, toast, confirmDialog } from "../../utils/dom.js";
 import { icon } from "../../utils/icons.js";
 import { db } from "../../firebase/firebase-init.js";
 import {
   collection,
+  doc,
   query,
   where,
   orderBy,
   getDocs,
+  deleteDoc,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
-import { registerEntry, registerExit } from "../../services/parking.service.js";
-import { createPackage, deliverPackage } from "../../services/packages.service.js";
-import { createObject, loanObject, returnObject, setObjectActive } from "../../services/objects.service.js";
-import { createAccessItem, deliverAccessItem } from "../../services/access-items.service.js";
+import { registerEntry, registerExit, MAX_MINUTES_OFFICE } from "../../services/parking.service.js";
+import { createPackage } from "../../services/packages.service.js";
+import { createObject, loanObject } from "../../services/objects.service.js";
+import { createAccessItem } from "../../services/access-items.service.js";
+import { logAudit } from "../../services/audit.service.js";
 import { buildDestinationCode } from "../../utils/destination.js";
 import { friendlyError } from "../../utils/errors.js";
 
@@ -29,7 +37,7 @@ export async function renderDemoTab(root) {
     el("div", { class: "card mb-md" }, [
       el("div", { class: "card__title row" }, [icon("info"), "Demostración para presentaciones"]),
       el("div", { class: "text-secondary" },
-        "Carga de un solo golpe datos de ejemplo — claramente marcados como \"DEMO\" — en Parqueos, Paquetes, Objetos y Tarjetas/Stickers, para no tener que escribir nada en vivo frente a la junta. Cuando termines, \"Limpiar demostración\" resuelve todo (registra salidas, entregas y devoluciones) — nunca borra nada, solo lo deja como si el ciclo normal hubiera terminado."
+        "Carga de un solo golpe datos de ejemplo — claramente marcados como \"DEMO\" — en Parqueos, Paquetes, Objetos y Tarjetas/Stickers, para no tener que escribir nada en vivo frente a la junta: 3 parqueos de visita a la Oficina A-801 (para demostrar el límite de 3 simultáneos), uno de ellos a 20 segundos de cumplir su tiempo máximo (para probar el aviso de tiempo vencido). Cuando termines, \"Limpiar demostración\" ELIMINA todo lo cargado, sin importar si ya lo marcaste como entregado/devuelto durante la presentación."
       ),
     ])
   );
@@ -58,7 +66,7 @@ export async function renderDemoTab(root) {
   clearBtn.addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "Limpiar demostración",
-      body: "Esto registra salida/entrega/devolución de todo lo que quedó marcado como demo. No afecta datos reales. ¿Continuar?",
+      body: "Esto ELIMINA por completo todo lo que quedó marcado como demo (parqueos, paquetes, objetos, préstamos y tarjetas), sin importar el estado en que haya quedado. No afecta datos reales. ¿Continuar?",
       confirmText: "Sí, limpiar",
     });
     if (!ok) return;
@@ -102,20 +110,46 @@ async function findFreeSpaces(count) {
 }
 
 async function seedDemoData(log) {
-  // Parqueos
-  const freeSpaces = await findFreeSpaces(2);
+  // Parqueos: 3 visitas al MISMO destino (Oficina A-801) para poder
+  // demostrar en vivo que un 4to intento se bloquea por el límite de
+  // MAX_SIMULTANEOUS_PER_DESTINATION. La última queda a 20 segundos de
+  // cumplir su tiempo máximo, para poder mostrar el aviso de tiempo vencido
+  // sin tener que esperar horas reales.
+  const officeDest = buildDestinationCode("A", "801");
+  const demoVisitors = [
+    { visitorName: "DEMO - María Rodríguez", visitorId: "0-0000-0001", plate: "DEMO001" },
+    { visitorName: "DEMO - Carlos Jiménez", visitorId: "0-0000-0002", plate: "DEMO002" },
+    { visitorName: "DEMO - Luis Fernández", visitorId: "0-0000-0003", plate: "DEMO003" },
+  ];
+  const freeSpaces = await findFreeSpaces(3);
   if (freeSpaces.length === 0) {
     log("No hay parqueos de visitante libres — se omite la parte de Parqueos.", false);
   } else {
-    const demoVisitors = [
-      { visitorName: "DEMO - María Rodríguez", visitorId: "0-0000-0001", plate: "DEMO001", destinationType: "office", destinationNumber: buildDestinationCode("A", "801") },
-      { visitorName: "DEMO - Carlos Jiménez", visitorId: "0-0000-0002", plate: "DEMO002", destinationType: "apartment", destinationNumber: buildDestinationCode("B", "1002") },
-    ];
+    if (freeSpaces.length < 3) {
+      log(`Solo hay ${freeSpaces.length} parqueo(s) de visitante libres (se necesitan 3 para demostrar el límite completo). Se cargan los que hay.`, false);
+    }
     for (let i = 0; i < freeSpaces.length; i++) {
-      const v = demoVisitors[i % demoVisitors.length];
+      const v = demoVisitors[i];
+      const isNearLimit = i === freeSpaces.length - 1;
       try {
-        await registerEntry(freeSpaces[i].number, { ...v, visitorPhone: "", lobbyOverride: "B", isDemo: true });
-        log(`Parqueo ${freeSpaces[i].number}: entrada de "${v.visitorName}" registrada.`);
+        const entryData = {
+          ...v,
+          visitorPhone: "",
+          destinationType: "office",
+          destinationNumber: officeDest,
+          lobbyOverride: "B",
+          isDemo: true,
+        };
+        if (isNearLimit) {
+          // El aviso de tiempo vencido se dispara cuando los minutos
+          // transcurridos (redondeados hacia abajo) SUPERAN el máximo, es
+          // decir, al cruzar el minuto (maxMinutes + 1). Se backdatea la
+          // entrada para que ese cruce ocurra 20 segundos después de cargar
+          // la demo, sin tener que esperar horas reales.
+          entryData.entryAtOverride = new Date(Date.now() - ((MAX_MINUTES_OFFICE + 1) * 60 * 1000 - 20 * 1000));
+        }
+        await registerEntry(freeSpaces[i].number, entryData);
+        log(`Parqueo ${freeSpaces[i].number}: entrada de "${v.visitorName}" registrada (Oficina ${officeDest})${isNearLimit ? " — a 20 segundos de cumplir el tiempo máximo" : ""}.`);
       } catch (err) {
         log(`Parqueo ${freeSpaces[i].number}: ${friendlyError(err)}`, false);
       }
@@ -131,17 +165,18 @@ async function seedDemoData(log) {
       trackingNumber: "DEMO-TRACK-001",
       isDemo: true,
     });
-    log("Paquete de demostración creado (Apto A-1201).");
+    log("Paquete de demostración creado, pendiente de entrega (Apto A-1201).");
   } catch (err) {
     log(`Paquetes: ${friendlyError(err)}`, false);
   }
 
-  // Objetos + préstamo
+  // Objetos + préstamo — un solo objeto, con una sola unidad, prestada, para
+  // que se vea claramente cómo luce un objeto sin disponibilidad.
   try {
     const objectId = await createObject({
       name: "DEMO - Linterna de emergencia",
       category: "Herramientas",
-      quantity: 3,
+      quantity: 1,
       isDemo: true,
     });
     await loanObject({
@@ -167,14 +202,15 @@ async function seedDemoData(log) {
       dropLobby: "B",
       isDemo: true,
     });
-    log("Tarjeta de demostración registrada (Apto B-903).");
+    log("Tarjeta de demostración registrada, pendiente de entrega (Apto B-903).");
   } catch (err) {
     log(`Tarjetas: ${friendlyError(err)}`, false);
   }
 }
 
 async function clearDemoData(log) {
-  // Parqueos demo ocupados -> registrar salida
+  // 1) Parqueos demo que sigan ocupados -> registrar salida para liberar el
+  // espacio físico con el flujo normal (deja el espacio en "free").
   const spacesSnap = await getDocs(
     query(collection(db, "parking_spaces"), where("isDemo", "==", true), where("status", "==", "occupied"))
   );
@@ -188,55 +224,62 @@ async function clearDemoData(log) {
     }
   }
 
-  // Paquetes demo pendientes -> entregar
-  const pkgSnap = await getDocs(
-    query(collection(db, "packages"), where("isDemo", "==", true), where("status", "==", "pending"))
-  );
+  // 2) Todas las sesiones de parqueo demo (abiertas o ya cerradas) y su
+  // espejo público se ELIMINAN, sin importar el estado.
+  const sessionsSnap = await getDocs(query(collection(db, "parking_sessions"), where("isDemo", "==", true)));
+  for (const d of sessionsSnap.docs) {
+    try {
+      await deleteDoc(doc(db, "parking_sessions", d.id));
+      await deleteDoc(doc(db, "public_status", d.id));
+    } catch (err) {
+      log(`Registro de parqueo demo: ${friendlyError(err)}`, false);
+    }
+  }
+  if (sessionsSnap.docs.length) log(`${sessionsSnap.docs.length} registro(s) de parqueo demo eliminado(s).`);
+
+  // 3) Paquetes demo -> se eliminan sin importar si ya se marcaron entregados.
+  const pkgSnap = await getDocs(query(collection(db, "packages"), where("isDemo", "==", true)));
   for (const d of pkgSnap.docs) {
     try {
-      await deliverPackage(d.id);
-      log(`Paquete "${d.data().recipientName}": marcado como entregado.`);
+      await deleteDoc(doc(db, "packages", d.id));
+      log(`Paquete "${d.data().recipientName}": eliminado.`);
     } catch (err) {
       log(`Paquete: ${friendlyError(err)}`, false);
     }
   }
 
-  // Préstamos demo activos -> devolver
-  const loanSnap = await getDocs(
-    query(collection(db, "object_loans"), where("isDemo", "==", true), where("status", "==", "loaned"))
-  );
+  // 4) Préstamos demo -> se eliminan sin importar si ya se devolvieron.
+  const loanSnap = await getDocs(query(collection(db, "object_loans"), where("isDemo", "==", true)));
   for (const d of loanSnap.docs) {
     try {
-      await returnObject(d.id, { returnObservations: "Demostración finalizada.", returnCondition: "bueno" });
-      log(`Préstamo "${d.data().objectName}": devuelto.`);
+      await deleteDoc(doc(db, "object_loans", d.id));
+      log(`Préstamo "${d.data().objectName}": eliminado.`);
     } catch (err) {
       log(`Préstamo: ${friendlyError(err)}`, false);
     }
   }
 
-  // Objetos demo -> desactivar (deja de ofrecerse a los guardias, sin borrarlo)
-  const objSnap = await getDocs(
-    query(collection(db, "objects"), where("isDemo", "==", true), where("active", "==", true))
-  );
+  // 5) Objetos demo -> se eliminan del catálogo por completo.
+  const objSnap = await getDocs(query(collection(db, "objects"), where("isDemo", "==", true)));
   for (const d of objSnap.docs) {
     try {
-      await setObjectActive(d.id, false);
-      log(`Objeto "${d.data().name}": desactivado.`);
+      await deleteDoc(doc(db, "objects", d.id));
+      log(`Objeto "${d.data().name}": eliminado.`);
     } catch (err) {
       log(`Objeto: ${friendlyError(err)}`, false);
     }
   }
 
-  // Tarjetas demo pendientes -> entregar
-  const accessSnap = await getDocs(
-    query(collection(db, "access_items"), where("isDemo", "==", true), where("status", "==", "pending"))
-  );
+  // 6) Tarjetas/Stickers demo -> se eliminan sin importar si ya se marcaron entregadas.
+  const accessSnap = await getDocs(query(collection(db, "access_items"), where("isDemo", "==", true)));
   for (const d of accessSnap.docs) {
     try {
-      await deliverAccessItem(d.id);
-      log(`Tarjeta "${d.data().recipientName}": marcada como entregada.`);
+      await deleteDoc(doc(db, "access_items", d.id));
+      log(`Tarjeta "${d.data().recipientName}": eliminada.`);
     } catch (err) {
       log(`Tarjeta: ${friendlyError(err)}`, false);
     }
   }
+
+  await logAudit("demo.clear", {});
 }

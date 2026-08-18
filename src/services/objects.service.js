@@ -4,6 +4,7 @@ import {
   doc,
   addDoc,
   updateDoc,
+  deleteDoc,
   runTransaction,
   serverTimestamp,
   query,
@@ -57,6 +58,11 @@ export async function updateObject(id, patch) {
 
 export async function setObjectActive(id, active) {
   await updateObject(id, { active });
+}
+
+export async function deleteObject(id, name) {
+  await deleteDoc(doc(db, "objects", id));
+  await logAudit("object.delete", { targetCollection: "objects", targetId: id, details: { name } });
 }
 
 export async function loanObject({ objectId, objectName, borrowerType, borrowerName, apartment, notes, isDemo = false }) {

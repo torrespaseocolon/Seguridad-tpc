@@ -70,6 +70,11 @@ export async function registerEntry(spaceNumber, data) {
   const destinationType = data.destinationType;
   const destinationNumber = data.destinationNumber.trim();
   const maxMinutes = maxMinutesForDestination(destinationType);
+  // entryAtOverride: solo lo usa la Demostración, para poder mostrar un
+  // parqueo a punto de vencerse sin tener que esperar horas reales. Cualquier
+  // llamada normal (guardia registrando una entrada real) no la pasa, así que
+  // sigue usando la hora real del servidor.
+  const entryAtValue = data.entryAtOverride instanceof Date ? data.entryAtOverride : serverTimestamp();
 
   // Límite de parqueos de visita simultáneos por apartamento/oficina. Se
   // consulta ANTES de la transacción (Firestore no permite consultas por
@@ -116,7 +121,7 @@ export async function registerEntry(spaceNumber, data) {
       isDemo: !!data.isDemo,
       destinationType,
       destinationNumber,
-      entryAt: serverTimestamp(),
+      entryAt: entryAtValue,
       entryGuardUid: profile.uid,
       entryGuardName: profile.name,
       entryLobby: profile.lobby || data.lobbyOverride || null,
@@ -140,7 +145,7 @@ export async function registerEntry(spaceNumber, data) {
       isDemo: !!data.isDemo,
       destinationType,
       destinationNumber,
-      entryAt: serverTimestamp(),
+      entryAt: entryAtValue,
       entryGuardName: profile.name,
       entryLobby: profile.lobby || data.lobbyOverride || null,
       maxMinutesAtEntry: maxMinutes,
@@ -151,7 +156,7 @@ export async function registerEntry(spaceNumber, data) {
     tx.set(doc(db, "public_status", sessionRef.id), {
       spaceNumber,
       destinationType,
-      entryAt: serverTimestamp(),
+      entryAt: entryAtValue,
       maxMinutesAtEntry: maxMinutes,
       extendedMinutes: 0,
       status: "open",

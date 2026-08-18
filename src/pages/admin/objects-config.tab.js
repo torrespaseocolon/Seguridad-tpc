@@ -1,6 +1,6 @@
-import { el, clear, toast, openModal, loadingState } from "../../utils/dom.js";
+import { el, clear, toast, openModal, loadingState, confirmDialog } from "../../utils/dom.js";
 import { icon } from "../../utils/icons.js";
-import { fetchAllObjects, createObject, updateObject, setObjectActive } from "../../services/objects.service.js";
+import { fetchAllObjects, createObject, updateObject, setObjectActive, deleteObject } from "../../services/objects.service.js";
 import { friendlyError } from "../../utils/errors.js";
 
 export async function renderObjectsConfigTab(root) {
@@ -58,6 +58,26 @@ function renderObjectCard(obj, reload) {
     }
   });
 
+  const deleteBtn = el("button", { class: "btn btn--danger" }, [icon("close", { size: 16 }), " Eliminar"]);
+  deleteBtn.addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "Eliminar objeto",
+      body: `¿Confirma eliminar "${obj.name}" de la lista? Si tiene préstamos activos, esos registros de historial se conservan, pero el objeto desaparece del catálogo. Esta acción no se puede deshacer desde la app.`,
+      confirmText: "Sí, eliminar",
+      danger: true,
+    });
+    if (!ok) return;
+    deleteBtn.disabled = true;
+    try {
+      await deleteObject(obj.id, obj.name);
+      toast("Objeto eliminado.", "success");
+      reload();
+    } catch (err) {
+      toast(friendlyError(err), "danger");
+      deleteBtn.disabled = false;
+    }
+  });
+
   return el("div", { class: "card" }, [
     el("div", { class: "row row--between" }, [
       el("strong", {}, obj.name),
@@ -66,7 +86,7 @@ function renderObjectCard(obj, reload) {
     obj.category ? el("div", { class: "text-secondary" }, obj.category) : null,
     obj.identifier ? el("div", { class: "text-faint" }, `Identificador: ${obj.identifier}`) : null,
     el("div", { class: "text-secondary" }, `Disponibles: ${obj.availableQuantity} / ${obj.totalQuantity}`),
-    el("div", { class: "row mt-md" }, [qtyInput, saveBtn, toggleBtn]),
+    el("div", { class: "row mt-md" }, [qtyInput, saveBtn, toggleBtn, deleteBtn]),
   ].filter(Boolean));
 }
 

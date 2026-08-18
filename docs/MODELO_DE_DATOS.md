@@ -15,8 +15,16 @@ contratas).
   coordinación instantánea entre Lobby A y Lobby B. El resto de pantallas (paquetes, objetos,
   tarjetas, historial) consultan Firestore **bajo demanda** (cuando el guardia abre la pantalla
   o presiona "Actualizar"), no con un listener permanente.
-- **Nunca se borra historial.** Ninguna colección operativa permite `delete`. Las correcciones se
-  hacen con `update`, dejando rastro en `audit_logs`.
+- **Nunca se borra historial real.** Las correcciones se hacen con `update`, dejando rastro en
+  `audit_logs`. Dos excepciones puntuales, ambas en `firestore.rules`:
+  - Cualquier documento con `isDemo: true` (en `parking_sessions`, `packages`, `object_loans` y
+    `access_items`) SÍ puede borrarlo un administrador — es lo que usa "Limpiar demostración" en
+    Administración para no dejar basura de una presentación mezclada con datos reales. Un
+    documento real (`isDemo` ausente o `false`) sigue sin poder borrarse nunca.
+  - `objects` (el catálogo de objetos en préstamo) SÍ permite `delete` general para cualquier
+    administrador, no solo demo — es una capacidad explícita para poder quitar objetos de la
+    lista. Los préstamos ya hechos (`object_loans`) guardan `objectName` por su cuenta, así que el
+    historial de préstamos se sigue leyendo bien aunque el objeto ya no exista.
 - **El rol y el lobby del usuario viven en un documento `users/{uid}`**, no en "custom claims" de
   Firebase (eso requeriría Cloud Functions, que ya no están disponibles en el plan gratuito
   Spark). Las reglas de seguridad leen ese documento para decidir qué puede hacer cada persona.
@@ -106,8 +114,12 @@ Historial permanente de cada entrada/salida. Nunca se borra.
 |---|---|
 | `name`, `category`, `identifier`, `description` | string |
 | `totalQuantity`, `availableQuantity` | number |
-| `active` | boolean (nunca se elimina un objeto con historial, se desactiva) |
+| `active` | boolean (para dejar de ofrecerlo sin borrarlo; ver "Eliminar" para borrarlo del todo) |
 | `createdAt/By`, `updatedAt/By` | — |
+
+Administración puede tanto **desactivar** (`active: false`, se mantiene en el catálogo pero deja
+de ofrecerse) como **eliminar** por completo (botón "Eliminar" en Administración → Objetos —
+único borrado real permitido fuera de la demostración, ver "Principios de diseño").
 
 ### `object_loans/{id}`
 | Campo | Tipo |
