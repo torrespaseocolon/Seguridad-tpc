@@ -124,9 +124,11 @@ function openEntryModal(space) {
 
   let lobbySelect = null;
   if (profile.role === "admin" && !profile.lobby) {
+    // Lobby B primero: la entrada física a los parqueos de visita está en
+    // ese lobby, así que es la opción correcta la mayoría de las veces.
     lobbySelect = el("select", { class: "form-control" }, [
+      el("option", { value: "B", selected: true }, "Lobby B"),
       el("option", { value: "A" }, "Lobby A"),
-      el("option", { value: "B" }, "Lobby B"),
     ]);
   }
 
