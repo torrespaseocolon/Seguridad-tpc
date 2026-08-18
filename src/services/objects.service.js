@@ -29,7 +29,7 @@ export async function fetchAllObjects() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-export async function createObject({ name, category, identifier, quantity, description }) {
+export async function createObject({ name, category, identifier, quantity, description, isDemo = false }) {
   const profile = getProfile();
   const ref = await addDoc(collection(db, "objects"), {
     name,
@@ -39,6 +39,7 @@ export async function createObject({ name, category, identifier, quantity, descr
     totalQuantity: quantity,
     availableQuantity: quantity,
     active: true,
+    isDemo,
     createdAt: serverTimestamp(),
     createdBy: profile.uid,
     updatedAt: serverTimestamp(),
@@ -58,7 +59,7 @@ export async function setObjectActive(id, active) {
   await updateObject(id, { active });
 }
 
-export async function loanObject({ objectId, objectName, borrowerType, borrowerName, apartment, notes }) {
+export async function loanObject({ objectId, objectName, borrowerType, borrowerName, apartment, notes, isDemo = false }) {
   const profile = getProfile();
   const objectRef = doc(db, "objects", objectId);
   const loanRef = doc(collection(db, "object_loans"));
@@ -79,6 +80,7 @@ export async function loanObject({ objectId, objectName, borrowerType, borrowerN
       borrowerName,
       apartment: apartment || "",
       notes: notes || "",
+      isDemo,
       status: "loaned",
       loanedAt: serverTimestamp(),
       loanedByUid: profile.uid,

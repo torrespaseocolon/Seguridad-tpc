@@ -8,6 +8,7 @@ import { renderObjectsConfigTab } from "./admin/objects-config.tab.js";
 import { renderAccessItemsAdminTab } from "./admin/access-items-admin.tab.js";
 import { renderReportsTab } from "./admin/reports.tab.js";
 import { renderCorrectionsTab } from "./admin/corrections.tab.js";
+import { renderDemoTab } from "./admin/demo.tab.js";
 
 const TABS = [
   { id: "dashboard", label: "Panel", render: renderDashboardTab },
@@ -17,6 +18,7 @@ const TABS = [
   { id: "access", label: "Tarjetas/Stickers", render: renderAccessItemsAdminTab },
   { id: "reports", label: "Reportes e historial", render: renderReportsTab },
   { id: "corrections", label: "Correcciones", render: renderCorrectionsTab },
+  { id: "demo", label: "Demostración", render: renderDemoTab },
 ];
 
 export function renderAdmin(root, params) {

@@ -17,7 +17,7 @@ import { logAudit } from "./audit.service.js";
 const TYPE_LABELS = { card: "Tarjeta de acceso", sticker: "Sticker vehicular", other: "Otro" };
 export { TYPE_LABELS };
 
-export async function createAccessItem({ type, recipientName, apartment, tower, dropLobby, notes }) {
+export async function createAccessItem({ type, recipientName, apartment, tower, dropLobby, notes, isDemo = false }) {
   const profile = getProfile();
   const ref = await addDoc(collection(db, "access_items"), {
     type,
@@ -26,6 +26,7 @@ export async function createAccessItem({ type, recipientName, apartment, tower, 
     tower: tower || "",
     dropLobby,
     notes: notes || "",
+    isDemo,
     status: "pending",
     createdAt: serverTimestamp(),
     createdByUid: profile.uid,

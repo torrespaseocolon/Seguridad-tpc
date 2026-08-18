@@ -14,7 +14,7 @@ import {
 import { getProfile } from "./auth.service.js";
 import { logAudit } from "./audit.service.js";
 
-export async function createPackage({ apartment, recipientName, courier, trackingNumber, notes }) {
+export async function createPackage({ apartment, recipientName, courier, trackingNumber, notes, isDemo = false }) {
   const profile = getProfile();
   const ref = await addDoc(collection(db, "packages"), {
     apartment,
@@ -22,6 +22,7 @@ export async function createPackage({ apartment, recipientName, courier, trackin
     courier,
     trackingNumber: trackingNumber || "",
     notes: notes || "",
+    isDemo,
     status: "pending",
     createdAt: serverTimestamp(),
     createdByUid: profile.uid,
