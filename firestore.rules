@@ -96,7 +96,10 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
       allow delete: if false;
-      // El guardia SOLO puede tocar los campos operativos de ocupar/liberar.
+      // El guardia SOLO puede tocar los campos operativos de ocupar/liberar,
+      // y solo si es el guardia de Lobby B (ago-2026: la entrada física real
+      // de los parqueos de visita está únicamente ahí — el guardia de Lobby
+      // A queda en modo consulta, ver canOperateParking() en parking.page.js).
       // El tipo de parqueo (visitante/discapacidad/deshabilitado) es
       // exclusivamente administrativo.
       allow update: if isSignedIn() && (
@@ -104,8 +107,8 @@ service cloud.firestore {
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         ||
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lobby == 'B' &&
          unchangedExcept([
            'status', 'sessionId', 'visitorName', 'visitorId', 'plate', 'visitorPhone', 'isDemo',
            'destinationType', 'destinationNumber', 'entryAt',
@@ -132,23 +135,26 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
         resource.data.isDemo == true;
 
+      // Crear (entrada) y cerrar (salida) solo lo puede hacer el guardia de
+      // Lobby B, o un administrador — misma restricción y misma razón que en
+      // parking_spaces más arriba.
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lobby == 'B')) &&
         request.resource.data.entryGuardUid == request.auth.uid &&
         request.resource.data.status == 'open' &&
         request.resource.data.exitAt == null;
 
-      // Cierre normal (salida) hecho por cualquier guardia/admin activo.
       // Corrección posterior (cualquier campo) reservada a administración.
       allow update: if isSignedIn() && (
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         ||
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lobby == 'B' &&
          resource.data.status == 'open' &&
          request.resource.data.status == 'closed' &&
          request.resource.data.exitGuardUid == request.auth.uid &&

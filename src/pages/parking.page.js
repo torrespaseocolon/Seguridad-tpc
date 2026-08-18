@@ -9,6 +9,19 @@ import { navigate } from "../router.js";
 import { notificationsSupported, getPermission, isEnabled, enable, disable, notify } from "../utils/notify.js";
 import { whatsappLink } from "../utils/whatsapp.js";
 
+// La entrada física de los parqueos de visita está solo en Lobby B (ver
+// commit "Poner Lobby B primero en el selector de lobby"). Por eso, desde
+// ago-2026, solo el guardia de Lobby B (o un administrador, que no está
+// atado a un lobby) puede registrar entradas y salidas; el guardia de
+// Lobby A queda en modo consulta: ve el estado en tiempo real y puede
+// avisarle al visitante por WhatsApp o mostrarle su QR, para poder ayudar a
+// Lobby B a distancia, pero no puede cambiar nada. La barrera real está en
+// firestore.rules — esto es solo para no mostrarle botones que de todas
+// formas el servidor le rechazaría.
+function canOperateParking(profile) {
+  return profile.role === "admin" || profile.lobby === "B";
+}
+
 const TYPE_BADGE = {
   visitor: null,
   disability: { icon: "wheelchair", text: "DISCAPACIDAD", cls: "badge--disability" },
@@ -82,6 +95,7 @@ export function renderParking(root) {
 function renderSpaceCard(space) {
   const isFree = space.status === "free";
   const isDisabled = space.type === "disabled";
+  const canOperate = canOperateParking(getProfile());
   const badge = TYPE_BADGE[space.type];
 
   const classes = ["space-card"];
@@ -108,7 +122,16 @@ function renderSpaceCard(space) {
   return el("div", {
     class: classes.join(" "),
     id: `space-${space.number}`,
-    onclick: isDisabled ? null : () => (isFree ? openEntryModal(space) : openExitModal(space)),
+    onclick: isDisabled
+      ? null
+      : () => {
+          if (isFree && !canOperate) {
+            toast("Solo el guardia de Lobby B (o un administrador) puede registrar entradas de parqueo.", "info");
+            return;
+          }
+          if (isFree) openEntryModal(space);
+          else openExitModal(space);
+        },
   }, children.filter(Boolean));
 }
 
@@ -195,9 +218,13 @@ function openEntryModal(space) {
 
 function openExitModal(space) {
   const profile = getProfile();
+  const canOperate = canOperateParking(profile);
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const timerEl = el("div", { class: "timer mono", id: "exit-modal-timer" }, formatElapsed(space.entryAt));
-  const confirmBtn = el("button", { class: "btn btn--danger btn--block btn--lg" }, "REGISTRAR SALIDA");
+  const confirmBtn = canOperate ? el("button", { class: "btn btn--danger btn--block btn--lg" }, "REGISTRAR SALIDA") : null;
+  const readOnlyNote = canOperate
+    ? null
+    : el("div", { class: "form-hint text-center" }, "Solo el guardia de Lobby B (o un administrador) puede registrar la salida. Puede avisarle al visitante por WhatsApp o mostrarle el QR mientras tanto.");
   const qrBtn = el("button", { class: "btn btn--secondary btn--block" }, [icon("card", { size: 18 }), " Ver código QR de consulta"]);
   qrBtn.addEventListener("click", () => {
     if (space.sessionId) showConsultaQr(space.number, buildConsultaUrl(space.sessionId), null);
@@ -231,6 +258,7 @@ function openExitModal(space) {
     el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
     qrBtn,
     whatsappBtn,
+    readOnlyNote,
     errorBox,
     confirmBtn,
   ].filter(Boolean));
@@ -242,28 +270,30 @@ function openExitModal(space) {
   const closeFn = openModal(content);
   const originalClose = closeFn;
 
-  confirmBtn.addEventListener("click", async () => {
-    const ok = await confirmDialog({
-      title: "Confirmar salida",
-      body: `¿Confirma la salida del vehículo ${space.plate} (parqueo ${space.number})? El espacio quedará disponible de inmediato.`,
-      confirmText: "Sí, registrar salida",
-      danger: true,
+  if (confirmBtn) {
+    confirmBtn.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: "Confirmar salida",
+        body: `¿Confirma la salida del vehículo ${space.plate} (parqueo ${space.number})? El espacio quedará disponible de inmediato.`,
+        confirmText: "Sí, registrar salida",
+        danger: true,
+      });
+      if (!ok) return;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "GUARDANDO...";
+      try {
+        await registerExit(space.number);
+        toast(`Salida registrada. Parqueo ${space.number} liberado.`, "success");
+        tickerStop();
+        originalClose();
+      } catch (err) {
+        errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la salida. Intente nuevamente.";
+        errorBox.style.display = "block";
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "REGISTRAR SALIDA";
+      }
     });
-    if (!ok) return;
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = "GUARDANDO...";
-    try {
-      await registerExit(space.number);
-      toast(`Salida registrada. Parqueo ${space.number} liberado.`, "success");
-      tickerStop();
-      originalClose();
-    } catch (err) {
-      errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la salida. Intente nuevamente.";
-      errorBox.style.display = "block";
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = "REGISTRAR SALIDA";
-    }
-  });
+  }
 }
 
 /**
