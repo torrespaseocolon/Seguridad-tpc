@@ -11,7 +11,6 @@ import {
   updateDoc,
   setDoc,
   getDocs,
-  getCountFromServer,
   where,
   limit as fbLimit,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
@@ -65,6 +64,27 @@ export function subscribeParkingSpaces(callback, onError) {
 
 class OperationError extends Error {}
 
+/**
+ * Antes registerEntry/registerExit usaban runTransaction + getCountFromServer
+ * para blindarse contra dos guardias registrando el mismo espacio (o
+ * superando el límite por destino) en el mismo instante. NINGUNA de las dos
+ * funciona sin conexión: las transacciones necesitan ida y vuelta al
+ * servidor, y getCountFromServer explícitamente nunca usa la caché local.
+ * Eso bloqueaba por completo registrar parqueos sin señal.
+ *
+ * Ago-2026: desde que SOLO el guardia de Lobby B (o un administrador) puede
+ * registrar entradas/salidas (ver canOperateParking() en parking.page.js y
+ * la restricción de lobby en firestore.rules), ya no existe el escenario que
+ * esas protecciones evitaban — normalmente hay una sola persona/dispositivo
+ * tocando los parqueos a la vez. Por eso se cambió a lecturas/escrituras
+ * simples (getDoc/updateDoc/setDoc en vez de transacción, getDocs en vez de
+ * getCountFromServer): sí funcionan sin señal, se guardan en el dispositivo
+ * y se sincronizan solas al volver la conexión. Queda un riesgo pequeño y
+ * aceptado: si dos sesiones (por ejemplo el guardia de Lobby B Y un
+ * administrador) intentaran ocupar el mismo espacio en el mismo instante
+ * estando ambos en línea, ya no hay una garantía atómica del servidor que lo
+ * impida — un caso raro en la operación real del condominio.
+ */
 export async function registerEntry(spaceNumber, data) {
   const profile = getProfile();
   const destinationType = data.destinationType;
@@ -76,14 +96,10 @@ export async function registerEntry(spaceNumber, data) {
   // sigue usando la hora real del servidor.
   const entryAtValue = data.entryAtOverride instanceof Date ? data.entryAtOverride : serverTimestamp();
 
-  // Límite de parqueos de visita simultáneos por apartamento/oficina. Se
-  // consulta ANTES de la transacción (Firestore no permite consultas por
-  // filtro dentro de una transacción, solo lecturas de documentos puntuales),
-  // así que existe una pequeñísima ventana de carrera entre dos guardias
-  // registrando el mismo destino en el mismo instante — aceptable para este
-  // límite de "buen uso", a diferencia de la ocupación del espacio físico
-  // (esa sí queda 100% protegida por la transacción de abajo).
-  const activeCountSnap = await getCountFromServer(
+  // Límite de parqueos de visita simultáneos por apartamento/oficina. getDocs
+  // (a diferencia de getCountFromServer) sí funciona offline contra la caché
+  // local, así que este chequeo se sigue aplicando aunque no haya señal.
+  const activeSnap = await getDocs(
     query(
       collection(db, "parking_sessions"),
       where("status", "==", "open"),
@@ -91,77 +107,75 @@ export async function registerEntry(spaceNumber, data) {
       where("destinationNumber", "==", destinationNumber)
     )
   );
-  if (activeCountSnap.data().count >= MAX_SIMULTANEOUS_PER_DESTINATION) {
+  if (activeSnap.size >= MAX_SIMULTANEOUS_PER_DESTINATION) {
     throw new OperationError(
       `Ya hay ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita en uso para este ${destinationType === "office" ? "local" : "apartamento"} (máximo permitido). Debe liberarse uno antes de registrar otro.`
     );
   }
 
   const spaceRef = doc(db, "parking_spaces", spaceNumber);
+  const spaceSnap = await getDoc(spaceRef);
+  if (!spaceSnap.exists()) throw new OperationError("Ese parqueo no existe.");
+  const space = spaceSnap.data();
+  if (space.status !== "free") {
+    throw new OperationError("Este parqueo ya está ocupado. Elija otro espacio.");
+  }
+  if (space.type === "disabled") {
+    throw new OperationError("Este parqueo está deshabilitado.");
+  }
+
   const sessionRef = doc(collection(db, "parking_sessions"));
 
-  await runTransaction(db, async (tx) => {
-    const spaceSnap = await tx.get(spaceRef);
-    if (!spaceSnap.exists()) throw new OperationError("Ese parqueo no existe.");
-    const space = spaceSnap.data();
-    if (space.status !== "free") {
-      throw new OperationError("Este parqueo acaba de ser ocupado por otro usuario. Elija otro espacio.");
-    }
-    if (space.type === "disabled") {
-      throw new OperationError("Este parqueo está deshabilitado.");
-    }
+  await setDoc(sessionRef, {
+    spaceNumber,
+    status: "open",
+    visitorName: data.visitorName,
+    visitorId: data.visitorId,
+    plate: data.plate,
+    visitorPhone: data.visitorPhone || "",
+    isDemo: !!data.isDemo,
+    destinationType,
+    destinationNumber,
+    entryAt: entryAtValue,
+    entryGuardUid: profile.uid,
+    entryGuardName: profile.name,
+    entryLobby: profile.lobby || data.lobbyOverride || null,
+    exitAt: null,
+    exitGuardUid: null,
+    exitGuardName: null,
+    exitLobby: null,
+    durationMinutes: null,
+    maxMinutesAtEntry: maxMinutes,
+    corrected: false,
+    correctionNote: "",
+  });
 
-    tx.set(sessionRef, {
-      spaceNumber,
-      status: "open",
-      visitorName: data.visitorName,
-      visitorId: data.visitorId,
-      plate: data.plate,
-      visitorPhone: data.visitorPhone || "",
-      isDemo: !!data.isDemo,
-      destinationType,
-      destinationNumber,
-      entryAt: entryAtValue,
-      entryGuardUid: profile.uid,
-      entryGuardName: profile.name,
-      entryLobby: profile.lobby || data.lobbyOverride || null,
-      exitAt: null,
-      exitGuardUid: null,
-      exitGuardName: null,
-      exitLobby: null,
-      durationMinutes: null,
-      maxMinutesAtEntry: maxMinutes,
-      corrected: false,
-      correctionNote: "",
-    });
+  await updateDoc(spaceRef, {
+    status: "occupied",
+    sessionId: sessionRef.id,
+    visitorName: data.visitorName,
+    visitorId: data.visitorId,
+    plate: data.plate,
+    visitorPhone: data.visitorPhone || "",
+    isDemo: !!data.isDemo,
+    destinationType,
+    destinationNumber,
+    entryAt: entryAtValue,
+    entryGuardName: profile.name,
+    entryLobby: profile.lobby || data.lobbyOverride || null,
+    maxMinutesAtEntry: maxMinutes,
+    updatedAt: serverTimestamp(),
+  });
 
-    tx.update(spaceRef, {
-      status: "occupied",
-      sessionId: sessionRef.id,
-      visitorName: data.visitorName,
-      visitorId: data.visitorId,
-      plate: data.plate,
-      visitorPhone: data.visitorPhone || "",
-      isDemo: !!data.isDemo,
-      destinationType,
-      destinationNumber,
-      entryAt: entryAtValue,
-      entryGuardName: profile.name,
-      entryLobby: profile.lobby || data.lobbyOverride || null,
-      maxMinutesAtEntry: maxMinutes,
-      updatedAt: serverTimestamp(),
-    });
-
-    // Espejo público (sin datos personales) para la consulta por QR.
-    tx.set(doc(db, "public_status", sessionRef.id), {
-      spaceNumber,
-      destinationType,
-      entryAt: entryAtValue,
-      maxMinutesAtEntry: maxMinutes,
-      extendedMinutes: 0,
-      status: "open",
-      exitAt: null,
-    });
+  // Espejo público (sin datos personales) para la consulta por QR.
+  await setDoc(doc(db, "public_status", sessionRef.id), {
+    spaceNumber,
+    destinationType,
+    entryAt: entryAtValue,
+    maxMinutesAtEntry: maxMinutes,
+    extendedMinutes: 0,
+    status: "open",
+    exitAt: null,
   });
 
   await logAudit("parking.entry", {
@@ -176,52 +190,48 @@ export async function registerEntry(spaceNumber, data) {
 export async function registerExit(spaceNumber) {
   const profile = getProfile();
   const spaceRef = doc(db, "parking_spaces", spaceNumber);
-  let sessionId = null;
-  let durationMinutes = 0;
 
-  await runTransaction(db, async (tx) => {
-    const spaceSnap = await tx.get(spaceRef);
-    if (!spaceSnap.exists()) throw new OperationError("Ese parqueo no existe.");
-    const space = spaceSnap.data();
-    if (space.status !== "occupied" || !space.sessionId) {
-      throw new OperationError("Este vehículo ya fue registrado como salida por otro usuario.");
-    }
-    sessionId = space.sessionId;
-    const sessionRef = doc(db, "parking_sessions", sessionId);
-    const sessionSnap = await tx.get(sessionRef);
-    if (!sessionSnap.exists() || sessionSnap.data().status !== "open") {
-      throw new OperationError("Este registro ya fue cerrado.");
-    }
-    durationMinutes = elapsedMinutes(sessionSnap.data().entryAt);
+  const spaceSnap = await getDoc(spaceRef);
+  if (!spaceSnap.exists()) throw new OperationError("Ese parqueo no existe.");
+  const space = spaceSnap.data();
+  if (space.status !== "occupied" || !space.sessionId) {
+    throw new OperationError("Este vehículo ya fue registrado como salida por otro usuario.");
+  }
+  const sessionId = space.sessionId;
+  const sessionRef = doc(db, "parking_sessions", sessionId);
+  const sessionSnap = await getDoc(sessionRef);
+  if (!sessionSnap.exists() || sessionSnap.data().status !== "open") {
+    throw new OperationError("Este registro ya fue cerrado.");
+  }
+  const durationMinutes = elapsedMinutes(sessionSnap.data().entryAt);
 
-    tx.update(sessionRef, {
-      status: "closed",
-      exitAt: serverTimestamp(),
-      exitGuardUid: profile.uid,
-      exitGuardName: profile.name,
-      exitLobby: profile.lobby || null,
-      durationMinutes,
-    });
-
-    tx.update(spaceRef, {
-      status: "free",
-      sessionId: null,
-      visitorName: null,
-      visitorId: null,
-      plate: null,
-      visitorPhone: null,
-      isDemo: false,
-      destinationType: null,
-      destinationNumber: null,
-      entryAt: null,
-      entryGuardName: null,
-      entryLobby: null,
-      maxMinutesAtEntry: null,
-      updatedAt: serverTimestamp(),
-    });
-
-    tx.set(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true });
+  await updateDoc(sessionRef, {
+    status: "closed",
+    exitAt: serverTimestamp(),
+    exitGuardUid: profile.uid,
+    exitGuardName: profile.name,
+    exitLobby: profile.lobby || null,
+    durationMinutes,
   });
+
+  await updateDoc(spaceRef, {
+    status: "free",
+    sessionId: null,
+    visitorName: null,
+    visitorId: null,
+    plate: null,
+    visitorPhone: null,
+    isDemo: false,
+    destinationType: null,
+    destinationNumber: null,
+    entryAt: null,
+    entryGuardName: null,
+    entryLobby: null,
+    maxMinutesAtEntry: null,
+    updatedAt: serverTimestamp(),
+  });
+
+  await setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true });
 
   await logAudit("parking.exit", {
     targetCollection: "parking_sessions",

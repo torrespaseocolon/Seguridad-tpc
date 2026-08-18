@@ -66,6 +66,10 @@ antes de escribirle a soporte.
 - [ ] Al desconectar el Wi-Fi/datos del dispositivo, el indicador cambia a 🔴 SIN CONEXIÓN y
       aparece la franja roja superior.
 - [ ] Al reconectar, el indicador vuelve a 🟢 CONECTADO sin necesidad de recargar la página.
+- [ ] Con el dispositivo sin conexión, registrar un paquete/tarjeta/objeto/entrada de parqueo
+      (Lobby B) muestra el mensaje de éxito igual que en línea. Al reconectar, el registro aparece
+      en la base de datos (revisar en Firebase Console → Firestore, o que otro dispositivo ya
+      conectado lo vea aparecer).
 
 ## Seguridad (importante — probar antes de usar el sistema con datos reales)
 Estas pruebas confirman que la protección real está en Firebase y no solo en la interfaz.
@@ -81,6 +85,10 @@ Estas pruebas confirman que la protección real está en Firebase y no solo en l
       puede leerla).
 - [ ] Como guardia, intentar borrar un documento de `parking_sessions` — debe fallar siempre
       (nadie puede borrar historial, ni admin ni guardia).
+- [ ] Como guardia de **Lobby A**, intentar registrar una entrada de parqueo (crear un documento
+      en `parking_sessions`) — debe fallar (solo Lobby B o admin).
+- [ ] Como guardia de **Lobby A**, intentar prestar (crear `object_loans`) un objeto que pertenece
+      a Lobby B — debe fallar.
 - [ ] Confirmar en Firebase Console que las reglas publicadas coinciden exactamente con el
       archivo `firestore.rules` de este repositorio.
 

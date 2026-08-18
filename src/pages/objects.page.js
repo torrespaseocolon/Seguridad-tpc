@@ -5,11 +5,20 @@ import { fetchActiveObjects, fetchActiveLoans, loanObject, returnObject, Operati
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
 import { friendlyError } from "../utils/errors.js";
+import { getProfile } from "../services/auth.service.js";
 
 const BORROWER_LABELS = { resident: "Residente", concierge: "Concierge", admin: "Administración", other: "Otro" };
 
 export function renderObjects(root) {
   clear(root);
+  const profile = getProfile();
+  // Cada objeto pertenece a un solo lobby: un guardia solo ve (y puede
+  // prestar) el inventario de su propio lobby. Un administrador, que no está
+  // atado a un lobby, ve el catálogo completo. La barrera real está en
+  // firestore.rules — esto es solo para no mostrar objetos que de todas
+  // formas el servidor rechazaría prestar.
+  const objectsLobby = profile.role === "admin" ? null : profile.lobby;
+
   root.appendChild(
     el("div", { class: "back-bar" }, [
       el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
@@ -82,7 +91,7 @@ export function renderObjects(root) {
     list.appendChild(loadingState());
     try {
       if (tab === "available") {
-        const objects = await fetchActiveObjects();
+        const objects = await fetchActiveObjects(objectsLobby);
         allAvailable = objects.filter((o) => o.availableQuantity > 0);
       } else {
         allLoaned = await fetchActiveLoans();

@@ -177,6 +177,7 @@ async function seedDemoData(log) {
       name: "DEMO - Linterna de emergencia",
       category: "Herramientas",
       quantity: 1,
+      lobby: "B",
       isDemo: true,
     });
     await loanObject({

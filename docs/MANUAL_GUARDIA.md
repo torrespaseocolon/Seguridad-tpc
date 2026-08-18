@@ -9,13 +9,20 @@ CONEXIÓN.
 Presiona **🅿️ Parqueos**. Verás los 13 espacios: 🟢 **LIBRE** (puedes usarlo), 🔴 **OCUPADO** (ya
 tiene un vehículo), ♿ **DISCAPACIDAD** (reservado). Toca cualquier espacio para ver sus opciones.
 
-## Registrar una entrada
+**Importante (solo Lobby B registra):** la entrada física de los parqueos de visita está
+únicamente en Lobby B, así que solo el guardia de ese lobby puede registrar entradas y salidas. Si
+sos guardia de Lobby A, esta pantalla te deja ver el estado en tiempo real, avisarle al visitante
+por WhatsApp y mostrarle su código QR — para ayudar a Lobby B a distancia — pero no podés
+registrar nada ahí.
+
+## Registrar una entrada (solo Lobby B)
 1. Toca un parqueo 🟢 LIBRE.
-2. Completa: nombre, cédula, placa, y el apartamento u oficina de destino.
+2. Completa: nombre, cédula, placa y el apartamento/oficina de destino (torre + piso + unidad).
+   El sistema detecta solo si es apartamento u oficina/comercio — no hace falta elegirlo.
 3. Presiona **REGISTRAR ENTRADA**.
 4. El parqueo pasa a 🔴 OCUPADO con un cronómetro que corre solo — no tienes que hacer nada más.
 
-## Registrar una salida
+## Registrar una salida (solo Lobby B)
 1. Toca el parqueo 🔴 OCUPADO del vehículo que se retira.
 2. Revisa que los datos correspondan al vehículo correcto.
 3. Presiona **REGISTRAR SALIDA** y confirma.
@@ -35,6 +42,9 @@ tiene un vehículo), ♿ **DISCAPACIDAD** (reservado). Toca cualquier espacio pa
 2. Presiona **ENTREGADO** y confirma.
 
 ## Registrar un préstamo
+Cada objeto pertenece al inventario de un solo lobby: en "Disponibles" solo vas a ver (y podés
+prestar) los objetos de tu propio lobby. Si el objeto que necesitás es del otro lobby, pedile a
+ese guardia que lo registre.
 1. Presiona **🧰 Objetos → Disponibles**.
 2. Elige el objeto y presiona **PRESTAR**.
 3. Indica a quién se presta (Residente, Concierge, Administración u Otro), su nombre y
@@ -61,12 +71,15 @@ ejemplo: "Registré por error la salida del parqueo 06 en vez del 08"). Administ
 reporte y hará la corrección.
 
 ## Qué hacer si no hay Internet
-Verás la franja roja **🔴 SIN CONEXIÓN** en la parte superior. Mientras esté así:
-- No podrás registrar entradas, salidas, paquetes, préstamos ni entregas — los formularios no se
-  guardan sin conexión, para evitar que dos lobbies registren cosas contradictorias.
-- Espera a que vuelva la señal (el indicador cambia solo a 🟢 CONECTADO) y vuelve a intentarlo.
-- Si es una emergencia y no vuelve la señal, sigue el protocolo en papel que use el condominio
-  como respaldo mientras se restablece la conexión.
+Verás la franja roja **🔴 SIN CONEXIÓN** en la parte superior. Podés seguir trabajando casi
+normal:
+- Parqueos (solo Lobby B), Paquetes, Objetos y Tarjetas/Stickers se pueden seguir registrando y
+  entregando sin señal — los cambios quedan guardados en el celular/computadora y se suben solos
+  apenas vuelve la conexión, sin que tengas que hacer nada distinto ni reintentar nada.
+- Mientras estés sin conexión, es normal que la pantalla no muestre todavía lo que registró OTRO
+  dispositivo (por ejemplo, el otro lobby) — eso se pone al día apenas ambos tengan señal.
+- Si la falta de señal dura mucho tiempo, avisa a administración igual, por si prefieren activar
+  un respaldo en papel mientras tanto.
 
 ## Cerrar sesión
 Presiona **Cerrar sesión** en la esquina superior derecha. Hazlo siempre al final de tu turno,

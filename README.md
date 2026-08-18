@@ -123,12 +123,18 @@ una sola vez, en la consola de Firebase (que solo tú puedes abrir) cierra esa p
 
 ## Cómo funcionan los permisos (resumen)
 
-Cada usuario tiene un documento `users/{uid}` con su `role` (`admin` o `guard`) y su `lobby`. Las
+Cada usuario tiene un documento `users/{uid}` con su `role` (`admin`, `guard` o `viewer` — solo
+lectura, ve el Panel y Reportes de Administración sin poder operar nada) y su `lobby`. Las
 reglas de `firestore.rules` leen ese documento en cada operación y deciden qué se permite. La
 interfaz también oculta botones según el rol, pero **eso es solo comodidad visual**: la barrera
 real está en las reglas, que se aplican en el servidor de Firebase sin importar qué haga alguien
 desde las herramientas de desarrollador del navegador. Detalle completo, colección por colección,
 en `firestore.rules` (está fuertemente comentado) y en `docs/MODELO_DE_DATOS.md`.
+
+Caso especial: registrar entradas y salidas de **Parqueos** está restringido al guardia con
+`lobby == 'B'` (o a un administrador) — es donde físicamente está la entrada real de los parqueos
+de visita (ago-2026). El guardia de Lobby A queda en modo consulta en esa pantalla (ver estado,
+avisar por WhatsApp, mostrar el QR), pero no puede registrar nada ahí.
 
 ## Consumo de Firebase (plan Spark)
 
@@ -151,17 +157,28 @@ mantenerse dentro del plan gratuito:
 - Un Service Worker guarda en caché **solo los archivos propios de la app** (HTML/CSS/JS), para
   que la aplicación abra y muestre su interfaz aunque el dispositivo pierda la señal por un
   momento. **Nunca** cachea respuestas de Firebase.
-- Firestore mantiene su propia caché local (`persistentLocalCache`) que permite seguir viendo el
-  último estado conocido de los parqueos y reintentar escrituras breves cuando la señal es
-  inestable.
-- **Decisión deliberada**: no se implementó una cola de sincronización offline "completa" que
-  permita registrar entradas/salidas sin conexión y sincronizarlas después. La razón es el
-  requisito 72 del proyecto: si Lobby A y Lobby B pudieran registrar operaciones sin conexión y
-  sincronizarlas más tarde, dos guardias podrían ocupar el mismo parqueo sin que el sistema lo
-  note hasta que ambos recuperen señal — exactamente el conflicto que las transacciones de
-  Firestore están diseñadas para evitar. En su lugar, la aplicación muestra siempre un indicador
-  claro de conexión (🟢/🔴) y bloquea visualmente el envío de formularios cuando no hay señal, para
-  que el guardia nunca crea que algo se guardó cuando en realidad no se guardó.
+- Firestore mantiene su propia caché local (`persistentLocalCache`), lo que activa también su cola
+  de escritura offline: cualquier `addDoc`/`updateDoc`/`setDoc`/`deleteDoc` hecho sin conexión
+  queda guardado en el dispositivo y se sincroniza solo en cuanto vuelve la señal, sin código
+  adicional. El indicador de conexión (🟢/🔴) en el encabezado es solo informativo — no bloquea el
+  envío de formularios.
+- **Lo que sí tiene un límite técnico real**: las consultas agregadas (`getCountFromServer`) y las
+  transacciones (`runTransaction`) de Firestore **no pueden ejecutarse sin conexión** — ambas
+  necesitan ida y vuelta al servidor. Por eso Paquetes y Tarjetas/Stickers (que nunca las usaron)
+  siempre funcionaron offline, mientras que Parqueos y Objetos (préstamo/devolución) las usaban
+  para blindarse contra dos personas tocando el mismo recurso al mismo tiempo, y por eso offline
+  fallaban.
+- **Decisión histórica (ago-2026, ya superada) y su reemplazo actual**: originalmente no se
+  habilitó offline para Parqueos porque, si Lobby A y Lobby B pudieran registrar entradas sin
+  conexión, dos guardias podrían ocupar el mismo espacio sin que el sistema lo note hasta
+  sincronizar. Esa razón dejó de aplicar cuando se restringió el registro de parqueos a un solo
+  guardia (Lobby B) — ver "Cómo funcionan los permisos". De la misma forma, Objetos ahora separa
+  su inventario por lobby (`objects.lobby`), así que un objeto solo lo toca el guardia de su
+  propio lobby. En ambos casos se reemplazaron `getCountFromServer`/`runTransaction` por lecturas y
+  escrituras simples (si funcionan offline), aceptando un riesgo pequeño y ya documentado en el
+  código: si dos sesiones (por ejemplo el guardia y un administrador) tocaran el mismo recurso en
+  el mismo instante estando ambos en línea, ya no hay una garantía atómica del servidor que lo
+  impida — un caso raro en la operación real del condominio.
 
 ## Publicación en GitHub Pages
 

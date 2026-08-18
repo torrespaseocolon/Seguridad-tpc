@@ -38,11 +38,15 @@ la parte superior de la misma pantalla.
 Es el mismo procedimiento que "Configurar parqueos": elige **♿ Discapacidad** en el tipo del
 espacio correspondiente.
 
-## Crear y desactivar objetos
-**Administración → Objetos → + CREAR OBJETO.** Para ajustar la cantidad total disponible, cambia
-el número junto al objeto y presiona **Guardar cantidad**. Para retirar temporalmente un objeto
-sin perder su historial de préstamos, usa **Desactivar** (no existe un botón para eliminarlo
-permanentemente — es intencional, para conservar la trazabilidad).
+## Crear, desactivar y eliminar objetos
+**Administración → Objetos → + CREAR OBJETO.** Además del nombre y la cantidad, tenés que elegir a
+qué **Lobby** pertenece: cada objeto vive en el inventario de un solo lobby, y solo el guardia de
+ese lobby puede prestarlo (vos, como administrador, podés prestar cualquiera). Para ajustar la
+cantidad total o cambiar el lobby de un objeto ya creado, cambia el valor correspondiente y
+presiona **Guardar cambios**. Para retirar temporalmente un objeto sin perder su historial de
+préstamos, usa **Desactivar**; para quitarlo del todo del catálogo, usa **Eliminar** (los
+préstamos ya hechos con ese objeto conservan su nombre en el historial, así que no se pierde
+trazabilidad).
 
 ## Crear tarjetas y stickers
 **Administración → Tarjetas/Stickers → + REGISTRAR TARJETA / STICKER.** Completa tipo,

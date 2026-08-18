@@ -201,7 +201,11 @@ service cloud.firestore {
 
     // -------------------------------------------------------------------
     // objects — catálogo administrado por admin; availableQuantity la
-    // ajusta el guardia como efecto de un préstamo/devolución (+-1)
+    // ajusta el guardia como efecto de un préstamo/devolución (+-1).
+    // Cada objeto tiene un campo `lobby` ('A' o 'B'): pertenece al
+    // inventario de ese lobby únicamente (ago-2026, para poder prestar
+    // objetos sin conexión sin arriesgar sobre-préstamos entre lobbies
+    // distintos — ver nota en objects.service.js).
     // -------------------------------------------------------------------
     match /objects/{id} {
       allow read: if isSignedIn() &&
@@ -222,13 +226,17 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
+      // El guardia solo puede ajustar availableQuantity (efecto de un
+      // préstamo/devolución) de un objeto de SU PROPIO lobby (ago-2026: cada
+      // objeto pertenece a un solo lobby, ver nota arriba en "Crear
+      // objeto"). Un administrador puede ajustar cualquiera.
       allow update: if isSignedIn() && (
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
         ||
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' &&
+         resource.data.lobby == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lobby &&
          unchangedExcept(['availableQuantity']) &&
          (request.resource.data.availableQuantity == resource.data.availableQuantity - 1 ||
           request.resource.data.availableQuantity == resource.data.availableQuantity + 1))
@@ -251,10 +259,18 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
         resource.data.isDemo == true;
 
+      // Crear un préstamo (guardia): solo de un objeto que pertenezca a SU
+      // PROPIO lobby — así se hace cumplir del lado del servidor lo mismo
+      // que fetchActiveObjects(profile.lobby) ya oculta en la interfaz.
+      // Devolver (más abajo) queda sin esta restricción a propósito: un
+      // residente puede devolver un objeto en cualquier lobby, aunque
+      // pertenezca al inventario del otro.
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' &&
+          get(/databases/$(database)/documents/objects/$(request.resource.data.objectId)).data.lobby ==
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lobby)) &&
         request.resource.data.loanedByUid == request.auth.uid &&
         request.resource.data.status == 'loaned';
 

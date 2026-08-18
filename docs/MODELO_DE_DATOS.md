@@ -113,6 +113,7 @@ Historial permanente de cada entrada/salida. Nunca se borra.
 | Campo | Tipo |
 |---|---|
 | `name`, `category`, `identifier`, `description` | string |
+| `lobby` | `"A"` \| `"B"` — a qué lobby pertenece el objeto (ago-2026); un guardia solo ve y presta el inventario de su propio lobby, un administrador ve/presta cualquiera |
 | `totalQuantity`, `availableQuantity` | number |
 | `active` | boolean (para dejar de ofrecerlo sin borrarlo; ver "Eliminar" para borrarlo del todo) |
 | `createdAt/By`, `updatedAt/By` | — |
