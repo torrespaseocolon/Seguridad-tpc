@@ -132,6 +132,23 @@ de ofrecerse) como **eliminar** por completo (botón "Eliminar" en Administraci�
 | `loanedAt`, `loanedByUid`, `loanedByName`, `lobby` | — |
 | `returnedAt`, `returnedByUid`, `returnedByName`, `returnObservations`, `returnCondition` | — |
 
+### `found_items/{id}` (objetos encontrados / perdidos)
+No confundir con `objects/{id}` (el catálogo de préstamo): esto es "lost & found" — no tiene
+inventario ni disponibilidad, cada documento es un objeto físico puntual.
+| Campo | Tipo |
+|---|---|
+| `description` | string — qué es el objeto |
+| `foundLocation` | string — dónde se encontró (área/ubicación libre) |
+| `condition` | `"bueno"` \| `"danado"` |
+| `notes` | string (opcional) |
+| `status` | `"pending"` \| `"delivered"` |
+| `createdAt`, `createdByUid`, `createdByName`, `lobby` | — quién lo registró |
+| `deliveredAt`, `deliveredByUid`, `deliveredByName` | — quién marcó la entrega |
+| `deliveredToName`, `deliveredToApartment` | string — **bitácora**: nombre y apartamento/oficina de
+  quien retiró el objeto, capturados al momento de la entrega. Es el registro que permite
+  investigar después una entrega equivocada (a diferencia de paquetes/tarjetas, aquí no hay un
+  destinatario conocido de antemano — cualquiera podría reclamarlo). |
+
 ### `access_items/{id}` (tarjetas y stickers)
 | Campo | Tipo |
 |---|---|

@@ -26,6 +26,7 @@ import { registerEntry, registerExit, MAX_MINUTES_OFFICE } from "../../services/
 import { createPackage } from "../../services/packages.service.js";
 import { createObject, loanObject } from "../../services/objects.service.js";
 import { createAccessItem } from "../../services/access-items.service.js";
+import { createFoundItem } from "../../services/found-items.service.js";
 import { logAudit } from "../../services/audit.service.js";
 import { buildDestinationCode } from "../../utils/destination.js";
 import { friendlyError } from "../../utils/errors.js";
@@ -37,7 +38,7 @@ export async function renderDemoTab(root) {
     el("div", { class: "card mb-md" }, [
       el("div", { class: "card__title row" }, [icon("info"), "Demostración para presentaciones"]),
       el("div", { class: "text-secondary" },
-        "Carga de un solo golpe datos de ejemplo — claramente marcados como \"DEMO\" — en Parqueos, Paquetes, Objetos y Tarjetas/Stickers, para no tener que escribir nada en vivo frente a la junta: 3 parqueos de visita a la Oficina A-801 (para demostrar el límite de 3 simultáneos), uno de ellos a 20 segundos de cumplir su tiempo máximo (para probar el aviso de tiempo vencido). Cuando termines, \"Limpiar demostración\" ELIMINA todo lo cargado, sin importar si ya lo marcaste como entregado/devuelto durante la presentación."
+        "Carga de un solo golpe datos de ejemplo — claramente marcados como \"DEMO\" — en Parqueos, Paquetes, Objetos, Objetos encontrados y Tarjetas/Stickers, para no tener que escribir nada en vivo frente a la junta: 3 parqueos de visita a la Oficina A-801 (para demostrar el límite de 3 simultáneos), uno de ellos a 20 segundos de cumplir su tiempo máximo (para probar el aviso de tiempo vencido). Cuando termines, \"Limpiar demostración\" ELIMINA todo lo cargado, sin importar si ya lo marcaste como entregado/devuelto durante la presentación."
       ),
     ])
   );
@@ -66,7 +67,7 @@ export async function renderDemoTab(root) {
   clearBtn.addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "Limpiar demostración",
-      body: "Esto ELIMINA por completo todo lo que quedó marcado como demo (parqueos, paquetes, objetos, préstamos y tarjetas), sin importar el estado en que haya quedado. No afecta datos reales. ¿Continuar?",
+      body: "Esto ELIMINA por completo todo lo que quedó marcado como demo (parqueos, paquetes, objetos, préstamos, objetos encontrados y tarjetas), sin importar el estado en que haya quedado. No afecta datos reales. ¿Continuar?",
       confirmText: "Sí, limpiar",
     });
     if (!ok) return;
@@ -193,6 +194,19 @@ async function seedDemoData(log) {
     log(`Objetos: ${friendlyError(err)}`, false);
   }
 
+  // Objeto encontrado, pendiente de entrega
+  try {
+    await createFoundItem({
+      description: "DEMO - Llavero con 3 llaves",
+      foundLocation: "DEMO - Área de piscina",
+      condition: "bueno",
+      isDemo: true,
+    });
+    log("Objeto encontrado de demostración registrado, pendiente de entrega.");
+  } catch (err) {
+    log(`Objetos encontrados: ${friendlyError(err)}`, false);
+  }
+
   // Tarjetas / Stickers
   try {
     await createAccessItem({
@@ -271,7 +285,18 @@ async function clearDemoData(log) {
     }
   }
 
-  // 6) Tarjetas/Stickers demo -> se eliminan sin importar si ya se marcaron entregadas.
+  // 6) Objetos encontrados demo -> se eliminan sin importar si ya se marcaron entregados.
+  const foundSnap = await getDocs(query(collection(db, "found_items"), where("isDemo", "==", true)));
+  for (const d of foundSnap.docs) {
+    try {
+      await deleteDoc(doc(db, "found_items", d.id));
+      log(`Objeto encontrado "${d.data().description}": eliminado.`);
+    } catch (err) {
+      log(`Objeto encontrado: ${friendlyError(err)}`, false);
+    }
+  }
+
+  // 7) Tarjetas/Stickers demo -> se eliminan sin importar si ya se marcaron entregadas.
   const accessSnap = await getDocs(query(collection(db, "access_items"), where("isDemo", "==", true)));
   for (const d of accessSnap.docs) {
     try {

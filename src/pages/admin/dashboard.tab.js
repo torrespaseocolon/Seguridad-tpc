@@ -17,11 +17,12 @@ export async function renderDashboardTab(root) {
   clear(root);
   root.appendChild(loadingState("Cargando panel..."));
   try {
-    const [spacesSnap, packagesCount, loansCount, accessCount, recentAudit] = await Promise.all([
+    const [spacesSnap, packagesCount, loansCount, accessCount, foundCount, recentAudit] = await Promise.all([
       getDocs(collection(db, "parking_spaces")),
       getCountFromServer(query(collection(db, "packages"), where("status", "==", "pending"))),
       getCountFromServer(query(collection(db, "object_loans"), where("status", "==", "loaned"))),
       getCountFromServer(query(collection(db, "access_items"), where("status", "==", "pending"))),
+      getCountFromServer(query(collection(db, "found_items"), where("status", "==", "pending"))),
       getDocs(query(collection(db, "audit_logs"), orderBy("createdAt", "desc"), fbLimit(12))),
     ]);
 
@@ -47,6 +48,7 @@ export async function renderDashboardTab(root) {
         statTile("package", String(packagesCount.data().count), "Paquetes pendientes"),
         statTile("tools", String(loansCount.data().count), "Objetos prestados"),
         statTile("card", String(accessCount.data().count), "Tarjetas/stickers pendientes"),
+        statTile("search", String(foundCount.data().count), "Objetos encontrados pendientes"),
       ])
     );
 

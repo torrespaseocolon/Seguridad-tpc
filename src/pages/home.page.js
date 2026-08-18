@@ -13,7 +13,7 @@ import {
 const TILES = [
   { path: "/parqueos", icon: "parking", label: "Parqueos" },
   { path: "/paquetes", icon: "package", label: "Paquetes", badgeKey: "packages" },
-  { path: "/objetos", icon: "tools", label: "Objetos" },
+  { path: "/objetos", icon: "tools", label: "Objetos", badgeKey: "foundItems" },
   { path: "/tarjetas", icon: "card", label: "Tarjetas / Stickers", badgeKey: "accessItems" },
   { path: "/actividad", icon: "activity", label: "Actividad" },
 ];
@@ -75,6 +75,15 @@ async function loadBadgeCounts(slots) {
       if (count > 0) {
         slots.accessItems.textContent = String(count);
         slots.accessItems.style.display = "inline-flex";
+      }
+    }
+    if (slots.foundItems) {
+      const q = query(collection(db, "found_items"), where("status", "==", "pending"));
+      const snap = await getCountFromServer(q);
+      const count = snap.data().count;
+      if (count > 0) {
+        slots.foundItems.textContent = String(count);
+        slots.foundItems.style.display = "inline-flex";
       }
     }
   } catch (err) {

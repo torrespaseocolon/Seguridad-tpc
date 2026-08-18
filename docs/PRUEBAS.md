@@ -24,12 +24,17 @@ antes de escribirle a soporte.
 - [ ] Después de la salida, el parqueo vuelve a 🟢 LIBRE inmediatamente.
 - [ ] Bajando el límite de minutos en Administración y esperando (o editando manualmente una
       entrada antigua para pruebas), el parqueo muestra el aviso de excedido.
-- [ ] **Concurrencia**: abrir la app en dos pestañas/dispositivos distintos, iniciar sesión con
-      dos guardias, e intentar registrar entrada en el mismo parqueo casi al mismo tiempo desde
-      ambas — solo una debe tener éxito; la otra debe recibir "Este parqueo acaba de ser ocupado
-      por otro usuario."
-- [ ] Registrar una entrada en Lobby A se ve reflejada de inmediato (sin recargar) en una sesión
-      abierta en Lobby B.
+- [ ] Solo el guardia de **Lobby B** (o un administrador) puede tocar un parqueo 🟢 LIBRE para
+      registrar una entrada; el guardia de Lobby A que toca un espacio libre ve un aviso de que
+      no puede registrar ahí, y al tocar uno 🔴 OCUPADO solo ve información + botones de
+      WhatsApp/QR, sin poder registrar la salida.
+- [ ] Registrar una entrada desde Lobby B se ve reflejada de inmediato (sin recargar) en una
+      sesión abierta en Lobby A.
+- [ ] **Concurrencia (riesgo aceptado, ago-2026)**: si el guardia de Lobby B y un administrador
+      intentan registrar entrada en el mismo parqueo casi al mismo tiempo estando ambos en línea,
+      ya no hay una garantía atómica del servidor que lo evite (se quitó para poder registrar
+      parqueos sin conexión) — es un caso raro, pero si ocurre, el último en escribir "gana" y
+      puede quedar un registro huérfano; usar "Correcciones" para arreglarlo a mano.
 
 ## Paquetes
 - [ ] Crear un paquete nuevo lo deja en estado PENDIENTE.
@@ -38,13 +43,26 @@ antes de escribirle a soporte.
 - [ ] No es posible entregar el mismo paquete dos veces (probar recargando la lista después de entregarlo).
 
 ## Objetos y préstamos
-- [ ] Un objeto creado por administración aparece en "Disponibles" para el guardia.
+- [ ] Un objeto creado por administración (con un Lobby asignado) aparece en "Disponibles" SOLO
+      para el guardia de ese mismo lobby; un guardia del otro lobby no lo ve. Un administrador ve
+      los de ambos lobbies.
 - [ ] Prestar un objeto reduce en 1 la cantidad disponible.
-- [ ] El objeto prestado aparece en la pestaña "Prestados".
+- [ ] El objeto prestado aparece en la pestaña "Prestados" (visible para cualquier guardia, sin
+      importar el lobby).
 - [ ] Registrar la devolución aumenta en 1 la cantidad disponible y lo saca de "Prestados".
 - [ ] Un objeto con 0 unidades disponibles no permite un nuevo préstamo.
 - [ ] Desactivar un objeto desde Administración lo oculta de la lista de disponibles del guardia
       (pero no borra su historial de préstamos).
+- [ ] Cambiar el Lobby de un objeto desde Administración → Objetos hace que deje de verlo el
+      guardia del lobby anterior y empiece a verlo el del lobby nuevo.
+
+## Objetos encontrados / perdidos
+- [ ] Registrar un objeto encontrado (descripción, área, estado) lo deja PENDIENTE y visible para
+      cualquier guardia, sin importar el lobby.
+- [ ] Al entregarlo, el formulario exige el nombre de quien lo retira antes de dejar confirmar.
+- [ ] Después de entregarlo, desaparece de la lista de pendientes; el reporte "Objetos encontrados"
+      en Administración → Reportes muestra el nombre y apartamento de quien lo retiró (la
+      bitácora).
 
 ## Tarjetas / Stickers
 - [ ] Administración puede crear una tarjeta/sticker de prueba, queda PENDIENTE.

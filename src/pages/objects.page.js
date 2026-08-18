@@ -2,6 +2,7 @@ import { el, clear, toast, confirmDialog, openModal, loadingState, emptyState } 
 import { icon } from "../utils/icons.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { fetchActiveObjects, fetchActiveLoans, loanObject, returnObject, OperationError } from "../services/objects.service.js";
+import { createFoundItem, fetchPendingFoundItems, deliverFoundItem, CONDITION_LABELS } from "../services/found-items.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
 import { friendlyError } from "../utils/errors.js";
@@ -29,10 +30,15 @@ export function renderObjects(root) {
   let tab = "available";
   let allAvailable = [];
   let allLoaned = [];
+  let allFound = [];
   const tabBar = el("div", { class: "row", style: "margin-bottom:16px;" });
   const searchInput = el("input", { class: "form-control", placeholder: "Buscar..." });
+  const reportFoundBtn = el("button", { class: "btn btn--primary btn--block mb-md" }, [icon("plus", { size: 18 }), " REGISTRAR OBJETO ENCONTRADO"]);
+  reportFoundBtn.style.display = "none";
+  reportFoundBtn.addEventListener("click", () => openReportFoundModal(load));
   const list = el("div", { class: "stack" });
   root.appendChild(tabBar);
+  root.appendChild(reportFoundBtn);
   root.appendChild(el("div", { class: "form-group" }, [searchInput]));
   root.appendChild(list);
   searchInput.addEventListener("input", renderList);
@@ -53,6 +59,14 @@ export function renderObjects(root) {
         "Prestados"
       )
     );
+    tabBar.appendChild(
+      el(
+        "button",
+        { class: `btn ${tab === "found" ? "btn--primary" : "btn--secondary"} grow`, onclick: () => setTab("found") },
+        "Encontrados"
+      )
+    );
+    reportFoundBtn.style.display = tab === "found" ? "" : "none";
   }
 
   function setTab(next) {
@@ -74,7 +88,7 @@ export function renderObjects(root) {
         return;
       }
       for (const obj of filtered) list.appendChild(renderObjectCard(obj, load));
-    } else {
+    } else if (tab === "loaned") {
       const filtered = term
         ? allLoaned.filter((l) => (l.objectName || "").toLowerCase().includes(term) || (l.borrowerName || "").toLowerCase().includes(term) || (l.apartment || "").toLowerCase().includes(term))
         : allLoaned;
@@ -83,6 +97,15 @@ export function renderObjects(root) {
         return;
       }
       for (const loan of filtered) list.appendChild(renderLoanCard(loan, load));
+    } else {
+      const filtered = term
+        ? allFound.filter((f) => (f.description || "").toLowerCase().includes(term) || (f.foundLocation || "").toLowerCase().includes(term))
+        : allFound;
+      if (filtered.length === 0) {
+        list.appendChild(emptyState("tools", term ? "Ningún objeto encontrado coincide con la búsqueda." : "No hay objetos encontrados pendientes de entrega."));
+        return;
+      }
+      for (const item of filtered) list.appendChild(renderFoundItemCard(item, load));
     }
   }
 
@@ -93,8 +116,10 @@ export function renderObjects(root) {
       if (tab === "available") {
         const objects = await fetchActiveObjects(objectsLobby);
         allAvailable = objects.filter((o) => o.availableQuantity > 0);
-      } else {
+      } else if (tab === "loaned") {
         allLoaned = await fetchActiveLoans();
+      } else {
+        allFound = await fetchPendingFoundItems();
       }
       renderList();
     } catch (err) {
@@ -239,6 +264,130 @@ function openReturnModal(loan, reload) {
       errorBox.style.display = "block";
       submitBtn.disabled = false;
       submitBtn.textContent = "CONFIRMAR DEVOLUCIÓN";
+    }
+  });
+}
+
+function renderFoundItemCard(item, reload) {
+  const deliverBtn = el("button", { class: "btn btn--success btn--block" }, "ENTREGAR");
+  deliverBtn.addEventListener("click", () => openDeliverFoundModal(item, reload));
+
+  return el("div", { class: "card" }, [
+    el("div", { class: "row row--between" }, [
+      el("strong", {}, item.description),
+      el("span", { class: `badge ${item.condition === "danado" ? "badge--occupied" : "badge--free"}` }, CONDITION_LABELS[item.condition] || item.condition),
+    ]),
+    el("div", { class: "text-secondary mt-md" }, `Encontrado en: ${item.foundLocation}`),
+    item.notes ? el("div", { class: "text-faint" }, item.notes) : null,
+    el("div", { class: "text-faint" }, `Registrado: ${formatDateTime(item.createdAt)} · ${item.createdByName || ""}`),
+    el("div", { class: "mt-md" }, [deliverBtn]),
+  ].filter(Boolean));
+}
+
+function openReportFoundModal(reload) {
+  const descInput = el("input", { class: "form-control", required: true, placeholder: "Ej. Llavero azul con llave de carro" });
+  const locationInput = el("input", { class: "form-control", required: true, placeholder: "Ej. Piscina, pasillo Torre A piso 3..." });
+  const conditionSelect = el("select", { class: "form-control" }, [
+    el("option", { value: "bueno" }, "Buen estado"),
+    el("option", { value: "danado" }, "Con daño / observación"),
+  ]);
+  const notesInput = el("textarea", { class: "form-control", rows: "2" });
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR OBJETO ENCONTRADO");
+
+  const form = el(
+    "form",
+    {
+      class: "stack",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        if (!descInput.value.trim() || !locationInput.value.trim()) {
+          errorBox.textContent = "Complete la descripción y el área donde se encontró.";
+          errorBox.style.display = "block";
+          return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = "GUARDANDO...";
+        try {
+          await createFoundItem({
+            description: descInput.value.trim(),
+            foundLocation: locationInput.value.trim(),
+            condition: conditionSelect.value,
+            notes: notesInput.value.trim(),
+          });
+          toast("Objeto encontrado registrado.", "success");
+          closeFn();
+          reload();
+        } catch (err) {
+          errorBox.textContent = friendlyError(err);
+          errorBox.style.display = "block";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "REGISTRAR OBJETO ENCONTRADO";
+        }
+      },
+    },
+    [
+      el("div", { class: "modal__title" }, "Registrar objeto encontrado"),
+      field("¿Qué se encontró? *", descInput),
+      field("¿Dónde se encontró? *", locationInput),
+      field("Estado", conditionSelect),
+      field("Observaciones (opcional)", notesInput),
+      errorBox,
+      submitBtn,
+    ]
+  );
+
+  const closeFn = openModal(form);
+  descInput.focus();
+}
+
+/**
+ * Al entregar, pide nombre y apartamento de quien lo retira — es la
+ * bitácora que permite investigar después una entrega equivocada (a
+ * diferencia de paquetes/tarjetas, aquí no hay un destinatario ya conocido
+ * de antemano: cualquiera podría reclamar un objeto encontrado).
+ */
+function openDeliverFoundModal(item, reload) {
+  const nameInput = el("input", { class: "form-control", required: true });
+  const apartmentInput = el("input", { class: "form-control", placeholder: "Ej. A-801 (opcional si no aplica)" });
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const submitBtn = el("button", { class: "btn btn--success btn--block btn--lg" }, "CONFIRMAR ENTREGA");
+
+  const content = el("div", { class: "stack" }, [
+    el("div", { class: "modal__title" }, `Entregar: ${item.description}`),
+    el("div", { class: "text-secondary" }, `Encontrado en: ${item.foundLocation}`),
+    field("Nombre de quien lo retira *", nameInput),
+    field("Apartamento/oficina (opcional)", apartmentInput),
+    errorBox,
+    submitBtn,
+  ]);
+
+  const closeFn = openModal(content);
+  nameInput.focus();
+
+  submitBtn.addEventListener("click", async () => {
+    if (!nameInput.value.trim()) {
+      errorBox.textContent = "Ingrese el nombre de quien retira el objeto.";
+      errorBox.style.display = "block";
+      return;
+    }
+    const ok = await confirmDialog({
+      title: "Confirmar entrega",
+      body: `¿Confirma la entrega de "${item.description}" a ${nameInput.value.trim()}?`,
+    });
+    if (!ok) return;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "GUARDANDO...";
+    try {
+      await deliverFoundItem(item.id, { recipientName: nameInput.value.trim(), apartment: apartmentInput.value.trim() });
+      toast("Entrega registrada.", "success");
+      closeFn();
+      reload();
+    } catch (err) {
+      errorBox.textContent = friendlyError(err);
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "CONFIRMAR ENTREGA";
     }
   });
 }

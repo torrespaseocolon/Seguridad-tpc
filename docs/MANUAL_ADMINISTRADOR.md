@@ -55,8 +55,11 @@ podrá marcarla como "Entregado" — no podrá cambiar ninguno de estos datos.
 
 ## Consultar historial y reportes
 **Administración → Reportes e historial.** Elige la pestaña (Parqueos, Paquetes, Préstamos,
-Tarjetas/Stickers, Actividad por guardia) y presiona **⬇ Exportar CSV** para descargar un archivo
-que se puede abrir en Excel o Google Sheets.
+Tarjetas/Stickers, Objetos encontrados, Actividad por guardia) y presiona **⬇ Exportar CSV** para
+descargar un archivo que se puede abrir en Excel o Google Sheets. El reporte de "Objetos
+encontrados" incluye la bitácora completa de cada entrega (a quién se le entregó y en qué
+apartamento vive) — es el que hay que revisar si alguna vez hay una queja de que se entregó un
+objeto encontrado a la persona equivocada.
 
 ## Revisar auditoría
 La pestaña **Panel** del área de Administración muestra la actividad reciente de todo el sistema

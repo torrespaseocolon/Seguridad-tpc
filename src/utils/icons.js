@@ -28,6 +28,7 @@ const PATHS = {
   bell: '<path d="M6 10.5a6 6 0 0 1 12 0v3.8l1.6 2.7H4.4L6 14.3Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><path d="M9.5 19.5a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
   bellOff: '<path d="M6 10.5a6 6 0 0 1 9.8-4.6M18 10.5v3.8l1.6 2.7H7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><path d="M9.5 19.5a2.5 2.5 0 0 0 5 0M3 3l18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
   whatsapp: '<path d="M12 3.5a8.5 8.5 0 0 0-7.3 12.8L3.5 20.5l4.4-1.2A8.5 8.5 0 1 0 12 3.5Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8.8 8.6c.3-.6 1-1.7 1.5-1.1.4.4 1 1.4.8 1.8-.2.5-.9.7-.6 1.3.4.9 1.6 2.1 2.5 2.5.6.3.8-.4 1.3-.6.4-.2 1.4.4 1.8.8.5.5-.5 1.2-1.1 1.5-.9.4-1.9.1-3.1-.5-1.4-.7-2.8-2.1-3.5-3.5-.6-1.2-.9-2.2-.5-3.1Z" fill="currentColor" stroke="none"/>',
+  search: '<circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="m19.5 19.5-4.3-4.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 };
 
 /** Devuelve un <span class="icon"> con el SVG del ícono solicitado. */

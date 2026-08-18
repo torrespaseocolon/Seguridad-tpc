@@ -55,6 +55,23 @@ ese guardia que lo registre.
 1. Presiona **🧰 Objetos → Prestados**.
 2. Busca el objeto, presiona **REGISTRAR DEVOLUCIÓN**, indica el estado en que regresó, confirma.
 
+## Registrar un objeto encontrado
+No confundir con los objetos de préstamo (linternas, etc.) — esto es para algo que se le perdió a
+un residente y alguien lo entregó en el lobby, o lo encontraste vos mismo en un área común.
+1. Presiona **🧰 Objetos → Encontrados → + REGISTRAR OBJETO ENCONTRADO**.
+2. Describe el objeto, indica dónde se encontró y en qué estado (bueno / con daño).
+3. Presiona **REGISTRAR OBJETO ENCONTRADO**. Cualquier guardia (de cualquier lobby) lo va a poder
+   ver y entregar — no está separado por lobby como los objetos de préstamo.
+
+## Entregar un objeto encontrado
+**Importante:** antes de entregar, verifica que quien lo reclama realmente sea el dueño (pedile
+que describa el objeto o algo que solo el dueño sabría).
+1. Presiona **🧰 Objetos → Encontrados**, busca el objeto, presiona **ENTREGAR**.
+2. Escribe el nombre de quien lo retira, y su apartamento/oficina si corresponde — queda guardado
+   como bitácora, así que si después hay un reclamo de que se entregó mal, administración puede
+   revisar quién lo retiró y cuándo.
+3. Presiona **CONFIRMAR ENTREGA**.
+
 ## Entregar una tarjeta
 1. Presiona **💳 Tarjetas / Stickers**.
 2. Busca a la persona en la lista de pendientes. Verifica su identidad antes de entregar.

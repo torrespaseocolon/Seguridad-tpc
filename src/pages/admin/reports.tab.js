@@ -4,6 +4,7 @@ import { fetchParkingHistory } from "../../services/parking.service.js";
 import { fetchPackageHistory } from "../../services/packages.service.js";
 import { fetchLoanHistory } from "../../services/objects.service.js";
 import { fetchAccessItemHistory } from "../../services/access-items.service.js";
+import { fetchFoundItemHistory, CONDITION_LABELS } from "../../services/found-items.service.js";
 import { formatDateTime, formatMinutesDuration } from "../../utils/time.js";
 import { downloadCsv } from "../../utils/csv.js";
 import { friendlyError } from "../../utils/errors.js";
@@ -15,6 +16,7 @@ const REPORTS = [
   { id: "packages", label: "Paquetes" },
   { id: "loans", label: "Préstamos" },
   { id: "access", label: "Tarjetas/Stickers" },
+  { id: "found", label: "Objetos encontrados" },
   { id: "byGuard", label: "Actividad por guardia" },
 ];
 
@@ -95,6 +97,7 @@ export function renderReportsTab(root) {
       else if (active === "packages") await renderPackages(content, range);
       else if (active === "loans") await renderLoans(content, range);
       else if (active === "access") await renderAccess(content, range);
+      else if (active === "found") await renderFound(content, range);
       else if (active === "byGuard") await renderByGuard(content, range);
     } catch (err) {
       clear(content);
@@ -170,6 +173,20 @@ async function renderAccess(content, range) {
     registrado: formatDateTime(r.createdAt), admin: r.createdByName, entregado: formatDateTime(r.deliveredAt), guardia_entrego: r.deliveredByName,
   }))));
   content.appendChild(simpleList(rows, (r) => `${r.type} — ${r.recipientName} (${r.status === "pending" ? "Pendiente" : "Entregado"})`));
+}
+
+async function renderFound(content, range) {
+  const rows = await fetchFoundItemHistory(maxFor(DEFAULT_MAX, range), range);
+  clear(content);
+  content.appendChild(el("div", { class: "card__title" }, "Objetos encontrados por día"));
+  content.appendChild(barChart(bucketByDay(rows, "createdAt")));
+  content.appendChild(exportButton("historial_objetos_encontrados.csv", rows.map((r) => ({
+    descripcion: r.description, area: r.foundLocation, estado: CONDITION_LABELS[r.condition] || r.condition,
+    encontrado: formatDateTime(r.createdAt), guardia_registro: r.createdByName, estado_registro: r.status === "pending" ? "Pendiente" : "Entregado",
+    entregado: formatDateTime(r.deliveredAt), guardia_entrego: r.deliveredByName,
+    entregado_a: r.deliveredToName, apartamento_retira: r.deliveredToApartment,
+  }))));
+  content.appendChild(simpleList(rows, (r) => `${r.description} — ${r.foundLocation} (${r.status === "pending" ? "Pendiente" : `Entregado a ${r.deliveredToName || "?"}`})`));
 }
 
 async function renderByGuard(content, range) {

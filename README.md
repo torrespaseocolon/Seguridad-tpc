@@ -14,7 +14,10 @@ seguridad del condominio.
 - 🅿️ **Parqueos**: 13 espacios de visita con entrada/salida, cronómetro, límite de tiempo
   configurable, espacios de discapacidad y coordinación en tiempo real entre Lobby A y Lobby B.
 - 📦 **Paquetes**: registro y entrega con historial.
-- 🧰 **Objetos**: catálogo administrado por administración; préstamo y devolución por guardias.
+- 🧰 **Objetos**: catálogo administrado por administración (separado por lobby); préstamo y
+  devolución por guardias.
+- 🔍 **Objetos encontrados / perdidos**: cualquier guardia registra lo que encuentra (dónde y en
+  qué estado); al entregarlo queda una bitácora con nombre y apartamento de quien lo retiró.
 - 💳 **Tarjetas / Stickers**: administración los registra como pendientes; los guardias solo
   marcan la entrega, sin poder alterar los datos.
 - 📋 **Actividad**: reportes de error y vista rápida de actividad reciente.

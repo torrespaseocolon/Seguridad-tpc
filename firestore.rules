@@ -200,6 +200,46 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------
+    // found_items — objetos encontrados/perdidos. Al entregarlo, el guardia
+    // debe indicar nombre y apartamento de quien lo retira (deliveredToName/
+    // deliveredToApartment) — es la bitácora que pidió administración para
+    // poder investigar una entrega equivocada.
+    // -------------------------------------------------------------------
+    match /found_items/{id} {
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'viewer');
+      // Solo se puede borrar uno marcado como demostración (isDemo: true) —
+      // ver nota igual en parking_sessions más arriba.
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
+        resource.data.isDemo == true;
+
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+        request.resource.data.createdByUid == request.auth.uid &&
+        request.resource.data.status == 'pending';
+
+      allow update: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+         resource.data.status == 'pending' &&
+         request.resource.data.status == 'delivered' &&
+         request.resource.data.deliveredByUid == request.auth.uid &&
+         unchangedExcept(['status', 'deliveredAt', 'deliveredByUid', 'deliveredByName', 'deliveredToName', 'deliveredToApartment']))
+      );
+    }
+
+    // -------------------------------------------------------------------
     // objects — catálogo administrado por admin; availableQuantity la
     // ajusta el guardia como efecto de un préstamo/devolución (+-1).
     // Cada objeto tiene un campo `lobby` ('A' o 'B'): pertenece al
