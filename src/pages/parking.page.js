@@ -121,34 +121,14 @@ function openEntryModal(space) {
 
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
-  const destTypeInput = el("select", { class: "form-control" }, [
-    el("option", { value: "apartment" }, "Apartamento"),
-    el("option", { value: "office" }, "Oficina / Comercio"),
-  ]);
-  function syncSuggestedType() {
-    const result = destField.getResult();
-    if (result.ok && result.type) destTypeInput.value = result.type;
-  }
-  destField.towerSelect.addEventListener("change", syncSuggestedType);
-  destField.numberInput.addEventListener("input", syncSuggestedType);
 
   const limitHint = el(
     "div",
     { class: "form-hint" },
-    `Límite automático: apartamentos hasta ${MAX_MINUTES_APARTMENT / 60} horas, oficinas/comercios hasta ${MAX_MINUTES_OFFICE / 60} horas. Máximo ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita simultáneos por apartamento/oficina.`
+    `El sistema detecta automáticamente si es apartamento u oficina/comercio según la torre y el piso, y aplica el límite correspondiente: apartamentos hasta ${MAX_MINUTES_APARTMENT / 60} horas, oficinas/comercios hasta ${MAX_MINUTES_OFFICE / 60} horas. Máximo ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita simultáneos por apartamento/oficina.`
   );
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR ENTRADA");
-
-  let lobbySelect = null;
-  if (profile.role === "admin" && !profile.lobby) {
-    // Lobby B primero: la entrada física a los parqueos de visita está en
-    // ese lobby, así que es la opción correcta la mayoría de las veces.
-    lobbySelect = el("select", { class: "form-control" }, [
-      el("option", { value: "B", selected: true }, "Lobby B"),
-      el("option", { value: "A" }, "Lobby A"),
-    ]);
-  }
 
   const form = el(
     "form",
@@ -163,17 +143,26 @@ function openEntryModal(space) {
           errorBox.style.display = "block";
           return;
         }
+        if (!destResult.type) {
+          errorBox.textContent = "No se pudo determinar automáticamente si es apartamento u oficina/comercio para ese piso (los pisos 2 a 7 de la Torre B son de parqueo interno, sin unidades). Verifique el número.";
+          errorBox.style.display = "block";
+          return;
+        }
         submitBtn.disabled = true;
         submitBtn.textContent = "GUARDANDO...";
         try {
+          // El lobby que registra se detecta del propio perfil que inició
+          // sesión (profile.lobby); si es un administrador sin lobby
+          // asignado, se usa Lobby B por defecto — es donde físicamente
+          // está la entrada real de los parqueos de visita.
           const result = await registerEntry(space.number, {
             visitorName: nameInput.value.trim(),
             visitorId: idInput.value.trim(),
             plate: plateInput.value.trim().toUpperCase(),
             visitorPhone: phoneInput.value.trim(),
-            destinationType: destTypeInput.value,
+            destinationType: destResult.type,
             destinationNumber: destResult.code,
-            lobbyOverride: lobbySelect ? lobbySelect.value : null,
+            lobbyOverride: "B",
           });
           toast(`Entrada registrada en el parqueo ${space.number}.`, "success");
           showConsultaQr(space.number, result.consultaUrl, closeFn);
@@ -194,9 +183,7 @@ function openEntryModal(space) {
       field("Torre", destField.towerSelect),
       field("Número de piso + unidad", destField.numberInput),
       destField.hint,
-      field("Destino", destTypeInput),
       limitHint,
-      lobbySelect ? field("Lobby que registra", lobbySelect) : null,
       errorBox,
       submitBtn,
     ].filter(Boolean)
