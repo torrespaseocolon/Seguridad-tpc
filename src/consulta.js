@@ -185,7 +185,10 @@ function loadStatus(id) {
         renderNotFound();
         return;
       }
-      latestData = snap.data();
+      // "estimate": mismo motivo que en parking.service.js — mientras
+      // entryAt no haya sincronizado con el servidor, usa la hora del
+      // propio dispositivo en vez de mostrar el cronómetro vacío.
+      latestData = snap.data({ serverTimestamps: "estimate" });
       renderStatus(latestData);
     },
     () => {

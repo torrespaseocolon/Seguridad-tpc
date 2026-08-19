@@ -35,14 +35,26 @@ function maxMinutesForDestination(destinationType) {
   return destinationType === "office" ? MAX_MINUTES_OFFICE : MAX_MINUTES_APARTMENT;
 }
 
+// Si la app se está probando en una computadora local (localhost /
+// 127.0.0.1 — típicamente con "python -m http.server"), el código QR NO
+// puede apuntar a esa misma dirección: "localhost" en el celular de un
+// visitante significa "el propio celular de esa persona", nunca la PC del
+// guardia, así que nunca podría abrirlo. En ese caso se usa la dirección
+// real ya publicada — funciona igual porque ambas leen y escriben la MISMA
+// base de datos de Firebase, sin importar desde qué URL se generó el código.
+const PRODUCTION_ORIGIN = "https://torrespaseocolon.github.io/Seguridad-tpc/";
+
 /**
  * Dirección pública de consulta (sin iniciar sesión) para que el visitante
  * vea cuánto tiempo le queda escaneando su código QR. Se arma relativa a la
- * ubicación actual del sitio, así que funciona igual en GitHub Pages o en
- * cualquier otro lugar donde se publique el proyecto.
+ * ubicación actual del sitio (salvo que sea una prueba local, ver arriba),
+ * así que funciona igual en GitHub Pages o en cualquier otro lugar donde se
+ * publique el proyecto.
  */
 export function buildConsultaUrl(sessionId) {
-  return new URL(`consulta.html?id=${encodeURIComponent(sessionId)}`, window.location.href).href;
+  const isLocalTesting = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const base = isLocalTesting ? PRODUCTION_ORIGIN : window.location.href;
+  return new URL(`consulta.html?id=${encodeURIComponent(sessionId)}`, base).href;
 }
 
 /**
@@ -51,12 +63,21 @@ export function buildConsultaUrl(sessionId) {
  * Lobby A y Lobby B necesitan verse coordinados al instante (requisito 23
  * y 72 del proyecto). Se cancela automáticamente al salir de la pantalla
  * de Parqueos (ver router.js).
+ *
+ * `d.data({ serverTimestamps: "estimate" })`: registerEntry() guarda
+ * `entryAt` como serverTimestamp() (un "marcador" que Firestore reemplaza
+ * por la hora real recién cuando el servidor confirma la escritura). Sin
+ * esa opción, mientras no hay señal ese campo se ve `null` — el cronómetro
+ * no tiene de dónde arrancar y el guardia no ve a qué hora entró el
+ * vehículo. Con "estimate", Firestore usa el reloj del propio dispositivo
+ * como hora provisional hasta que llegue la confirmación real del
+ * servidor (que la reemplaza sola, sin que el guardia note el cambio).
  */
 export function subscribeParkingSpaces(callback, onError) {
   const q = query(collection(db, "parking_spaces"), orderBy("number"));
   return onSnapshot(
     q,
-    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }))),
     (err) => {
       console.error("[SEGURIDAD TPC] Error escuchando parqueos:", err);
       if (onError) onError(err);
