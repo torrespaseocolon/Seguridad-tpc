@@ -22,7 +22,8 @@ import {
   getDocs,
   deleteDoc,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
-import { registerEntry, registerExit, MAX_MINUTES_OFFICE } from "../../services/parking.service.js";
+import { registerEntry, registerExit, closeOpenSessionsForDestination } from "../../services/parking.service.js";
+import { getTimeRules } from "../../services/settings.service.js";
 import { createPackage } from "../../services/packages.service.js";
 import { createObject, loanObject } from "../../services/objects.service.js";
 import { createAccessItem } from "../../services/access-items.service.js";
@@ -123,15 +124,36 @@ async function findFreeSpaces(count) {
  * quedaron espacios REALES ocupados por pruebas anteriores (no de demo) —
  * eso hay que liberarlo a mano desde Parqueos o Administración →
  * Correcciones, la demo nunca toca datos reales.
+ *
+ * Además revisa específicamente la Oficina A-801 (el destino que usa la
+ * demo): aunque haya 3 espacios físicos libres, si YA existen 3 registros
+ * "abiertos" para esa oficina exacta (por ejemplo, de pruebas anteriores que
+ * no se cerraron bien), el propio límite de simultáneos bloquea los 3
+ * intentos de la demo de una — y por eso ni el de "20 segundos" llega a
+ * registrarse. Antes esto solo se veía como un error confuso al cargar; acá
+ * se explica y se ofrece liberarlos con un botón.
  */
 async function checkAvailability(card) {
   clear(card);
   try {
-    const snap = await getDocs(query(collection(db, "parking_spaces"), orderBy("number")));
-    const spaces = snap.docs.map((d) => d.data());
+    const officeDest = buildDestinationCode("A", "801");
+    const [spacesSnap, blockingSnap] = await Promise.all([
+      getDocs(query(collection(db, "parking_spaces"), orderBy("number"))),
+      getDocs(
+        query(
+          collection(db, "parking_sessions"),
+          where("status", "==", "open"),
+          where("destinationType", "==", "office"),
+          where("destinationNumber", "==", officeDest)
+        )
+      ),
+    ]);
+    const spaces = spacesSnap.docs.map((d) => d.data());
     const free = spaces.filter((s) => s.status === "free" && s.type === "visitor");
     const occupiedNumbers = spaces.filter((s) => s.status === "occupied" && s.type === "visitor").map((s) => s.number);
     const enough = free.length >= 3;
+    const blocking = blockingSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
     card.appendChild(
       el("div", { class: "row", style: `align-items:flex-start; color:${enough ? "var(--color-success)" : "var(--color-danger)"};` }, [
         icon(enough ? "check" : "warning", { size: 20 }),
@@ -144,6 +166,38 @@ async function checkAvailability(card) {
         ]),
       ].filter(Boolean))
     );
+
+    if (blocking.length > 0) {
+      const releaseBtn = el("button", { class: "btn btn--danger btn--block mt-md" }, `Liberar ${blocking.length} registro(s) abierto(s) de Oficina ${officeDest}`);
+      const warnBox = el("div", { class: "card mt-md", style: "border-color:var(--color-danger);" }, [
+        el("div", { class: "row", style: "align-items:flex-start; color:var(--color-danger);" }, [
+          icon("warning", { size: 20 }),
+          el("div", {}, [
+            el("div", { style: "font-weight:700;" }, `Ya hay ${blocking.length} registro(s) abierto(s) para la Oficina ${officeDest} — esto va a bloquear la demo (el límite es 3 simultáneos para el mismo destino).`),
+            el("div", { class: "text-secondary", style: "margin-top:4px;" },
+              blocking.map((b) => `${b.visitorName || "—"} (${b.plate || "sin placa"})`).join(", ")),
+            el("div", { class: "text-secondary", style: "margin-top:4px;" },
+              "Si son de pruebas anteriores (no visitas reales), liberalos con el botón de abajo antes de cargar la demo."),
+          ]),
+        ]),
+        releaseBtn,
+      ]);
+      card.appendChild(warnBox);
+
+      releaseBtn.addEventListener("click", async () => {
+        releaseBtn.disabled = true;
+        releaseBtn.textContent = "LIBERANDO...";
+        try {
+          await closeOpenSessionsForDestination("office", officeDest, "Liberado desde la pestaña Demostración (registro de prueba que bloqueaba el límite simultáneo).");
+          toast(`${blocking.length} registro(s) liberado(s).`, "success");
+          checkAvailability(card);
+        } catch (err) {
+          toast(friendlyError(err), "danger");
+          releaseBtn.disabled = false;
+          releaseBtn.textContent = `Liberar ${blocking.length} registro(s) abierto(s) de Oficina ${officeDest}`;
+        }
+      });
+    }
   } catch (err) {
     card.appendChild(el("div", { class: "text-secondary" }, "No se pudo comprobar la disponibilidad de parqueos."));
   }
@@ -152,9 +206,9 @@ async function checkAvailability(card) {
 async function seedDemoData(log) {
   // Parqueos: 3 visitas al MISMO destino (Oficina A-801) para poder
   // demostrar en vivo que un 4to intento se bloquea por el límite de
-  // MAX_SIMULTANEOUS_PER_DESTINATION. La última queda a 20 segundos de
-  // cumplir su tiempo máximo, para poder mostrar el aviso de tiempo vencido
-  // sin tener que esperar horas reales.
+  // simultáneos configurado en Administración → Parqueos. La última queda a
+  // 20 segundos de cumplir su tiempo máximo, para poder mostrar el aviso de
+  // tiempo vencido sin tener que esperar horas reales.
   const officeDest = buildDestinationCode("A", "801");
   const demoVisitors = [
     { visitorName: "DEMO - María Rodríguez", visitorId: "0-0000-0001", plate: "DEMO001" },
@@ -204,7 +258,8 @@ async function seedDemoData(log) {
           // decir, al cruzar el minuto (maxMinutes + 1). Se backdatea la
           // entrada para que ese cruce ocurra 20 segundos después de cargar
           // la demo, sin tener que esperar horas reales.
-          entryData.entryAtOverride = new Date(Date.now() - ((MAX_MINUTES_OFFICE + 1) * 60 * 1000 - 20 * 1000));
+          const maxMinutesOffice = getTimeRules().maxMinutesOffice;
+          entryData.entryAtOverride = new Date(Date.now() - ((maxMinutesOffice + 1) * 60 * 1000 - 20 * 1000));
         }
         await registerEntry(freeSpaces[i].number, entryData);
         log(`Parqueo ${freeSpaces[i].number}: entrada de "${v.visitorName}" registrada (Oficina ${officeDest})${isNearLimit ? " — a 20 segundos de cumplir el tiempo máximo" : ""}.`);

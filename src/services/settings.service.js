@@ -4,6 +4,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  onSnapshot,
   serverTimestamp,
   writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
@@ -17,6 +18,52 @@ export async function getSettings(forceRefresh = false) {
   const snap = await getDoc(doc(db, "settings", "general"));
   cachedSettings = snap.exists() ? snap.data() : null;
   return cachedSettings;
+}
+
+/**
+ * Reglas de tiempo de parqueo (ago-2026 v2: vuelven a ser configurables por
+ * administración — antes se habían fijado en el código por pedido de la
+ * Junta Directiva, pero ahora se pide poder ajustarlas desde la app si el
+ * reglamento cambia, sin depender de una modificación de código).
+ */
+export const DEFAULT_TIME_RULES = {
+  maxMinutesApartment: 24 * 60,
+  maxMinutesOffice: 6 * 60,
+  maxSimultaneousPerDestination: 3,
+};
+
+let liveSettings = null;
+
+/**
+ * Escucha en tiempo real settings/general y mantiene un valor en caché
+ * disponible de forma SÍNCRONA vía getTimeRules() — así registerEntry() en
+ * parking.service.js puede leer el límite de tiempo sin depender de una
+ * lectura de red (que podría quedarse esperando sin conexión, el mismo
+ * problema ya resuelto para otras operaciones — ver nota en
+ * parking.service.js). Se suscribe una sola vez, apenas alguien inicia
+ * sesión (ver app.js), y gracias a la caché persistente de Firestore el
+ * último valor conocido sigue disponible aunque el dispositivo abra la app
+ * sin conexión más adelante.
+ */
+export function subscribeSettings(callback) {
+  return onSnapshot(
+    doc(db, "settings", "general"),
+    (snap) => {
+      liveSettings = snap.exists() ? snap.data() : null;
+      cachedSettings = liveSettings;
+      if (callback) callback(liveSettings);
+    },
+    (err) => console.error("[SEGURIDAD TPC] Error escuchando configuración:", err)
+  );
+}
+
+/** Siempre devuelve un valor usable de inmediato, con los valores por defecto si aún no cargó nada. */
+export function getTimeRules() {
+  return {
+    maxMinutesApartment: liveSettings?.maxMinutesApartment ?? DEFAULT_TIME_RULES.maxMinutesApartment,
+    maxMinutesOffice: liveSettings?.maxMinutesOffice ?? DEFAULT_TIME_RULES.maxMinutesOffice,
+    maxSimultaneousPerDestination: liveSettings?.maxSimultaneousPerDestination ?? DEFAULT_TIME_RULES.maxSimultaneousPerDestination,
+  };
 }
 
 export async function updateSettings(partial) {

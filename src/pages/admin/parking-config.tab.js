@@ -6,17 +6,16 @@ import {
   updateSpaceType,
   forceReleaseSpace,
   extendParkingTime,
+  addParkingSpace,
   OperationError,
-  MAX_MINUTES_OFFICE,
-  MAX_MINUTES_APARTMENT,
-  MAX_SIMULTANEOUS_PER_DESTINATION,
 } from "../../services/parking.service.js";
-import { getSettings, initializeSystem } from "../../services/settings.service.js";
+import { getSettings, updateSettings, getTimeRules, initializeSystem } from "../../services/settings.service.js";
 import { friendlyError } from "../../utils/errors.js";
 
 const TYPE_OPTIONS = [
   { value: "visitor", label: "Visitante" },
   { value: "disability", label: "Discapacidad" },
+  { value: "moto", label: "Moto" },
   { value: "disabled", label: "Fuera de servicio" },
 ];
 
@@ -53,24 +52,68 @@ export async function renderParkingConfigTab(root) {
 
   clear(root);
 
+  const rules = getTimeRules();
+  const apartmentHoursInput = el("input", { class: "form-control", type: "number", min: "1", step: "1", value: String(rules.maxMinutesApartment / 60) });
+  const officeHoursInput = el("input", { class: "form-control", type: "number", min: "1", step: "1", value: String(rules.maxMinutesOffice / 60) });
+  const maxSimultaneousInput = el("input", { class: "form-control", type: "number", min: "1", step: "1", value: String(rules.maxSimultaneousPerDestination) });
+  const saveRulesBtn = el("button", { class: "btn btn--primary btn--block" }, "GUARDAR REGLAS DE TIEMPO");
+
+  saveRulesBtn.addEventListener("click", async () => {
+    const maxMinutesApartment = parseInt(apartmentHoursInput.value, 10) * 60;
+    const maxMinutesOffice = parseInt(officeHoursInput.value, 10) * 60;
+    const maxSimultaneousPerDestination = parseInt(maxSimultaneousInput.value, 10);
+    if (!maxMinutesApartment || !maxMinutesOffice || !maxSimultaneousPerDestination) {
+      toast("Ingrese valores válidos en las 3 reglas.", "danger");
+      return;
+    }
+    saveRulesBtn.disabled = true;
+    try {
+      await updateSettings({ maxMinutesApartment, maxMinutesOffice, maxSimultaneousPerDestination });
+      toast("Reglas de tiempo actualizadas.", "success");
+    } catch (err) {
+      toast(friendlyError(err), "danger");
+    }
+    saveRulesBtn.disabled = false;
+  });
+
   root.appendChild(
     el("div", { class: "card mb-md" }, [
-      el("div", { class: "card__title row" }, [icon("info"), "Reglas de tiempo (automáticas)"]),
-      el("div", { class: "stack", style: "gap:6px;" }, [
-        el("div", { class: "row row--between" }, [
-          el("span", { class: "text-secondary" }, "Apartamentos"),
-          el("strong", {}, `${MAX_MINUTES_APARTMENT / 60} horas`),
-        ]),
-        el("div", { class: "row row--between" }, [
-          el("span", { class: "text-secondary" }, "Oficinas / comercios"),
-          el("strong", {}, `${MAX_MINUTES_OFFICE / 60} horas`),
-        ]),
-        el("div", { class: "row row--between" }, [
-          el("span", { class: "text-secondary" }, "Máx. parqueos simultáneos por apartamento/oficina"),
-          el("strong", {}, String(MAX_SIMULTANEOUS_PER_DESTINATION)),
-        ]),
+      el("div", { class: "card__title row" }, [icon("info"), "Reglas de tiempo"]),
+      el("div", { class: "row", style: "flex-wrap:wrap; gap:12px;" }, [
+        el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Horas máx. — Apartamentos"), apartmentHoursInput]),
+        el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Horas máx. — Oficinas/comercios"), officeHoursInput]),
+        el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Máx. simultáneos por apto./oficina"), maxSimultaneousInput]),
       ]),
-      el("div", { class: "form-hint mt-md" }, "Estas reglas las aplica el sistema automáticamente al registrar cada entrada, según el tipo de destino. No se configuran manualmente."),
+      saveRulesBtn,
+      el("div", { class: "form-hint mt-md" }, "El sistema aplica estas reglas automáticamente al registrar cada entrada. Cambiarlas aquí no afecta los parqueos que ya están ocupados."),
+    ])
+  );
+
+  const addNumberInput = el("input", { class: "form-control", placeholder: "Ej. 01-2" });
+  const addTypeSelect = el("select", { class: "form-control" }, TYPE_OPTIONS.map((opt) => el("option", { value: opt.value }, opt.label)));
+  const addBtn = el("button", { class: "btn btn--primary" }, [icon("plus", { size: 16 }), " Agregar"]);
+  addBtn.addEventListener("click", async () => {
+    addBtn.disabled = true;
+    try {
+      await addParkingSpace(addNumberInput.value, addTypeSelect.value);
+      toast(`Parqueo ${addNumberInput.value.trim()} agregado.`, "success");
+      addNumberInput.value = "";
+      renderParkingConfigTab(root);
+    } catch (err) {
+      toast(err instanceof OperationError ? err.message : friendlyError(err), "danger");
+      addBtn.disabled = false;
+    }
+  });
+
+  root.appendChild(
+    el("div", { class: "card mb-md" }, [
+      el("div", { class: "card__title" }, "Agregar espacio de parqueo"),
+      el("div", { class: "row", style: "flex-wrap:wrap; gap:12px; align-items:flex-end;" }, [
+        el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Número de parqueo"), addNumberInput]),
+        el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Tipo"), addTypeSelect]),
+        addBtn,
+      ]),
+      el("div", { class: "form-hint mt-md" }, "Por ejemplo, para las motos: cambie el tipo del parqueo 01 a \"Moto\" abajo y agregue 8 espacios más aquí (01-2, 01-3... 01-9) también de tipo \"Moto\", así quedan 9 espacios de moto cada uno con su propio tiempo."),
     ])
   );
 

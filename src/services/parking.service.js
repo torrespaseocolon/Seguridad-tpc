@@ -16,23 +16,20 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { getProfile } from "./auth.service.js";
 import { logAudit } from "./audit.service.js";
+import { getTimeRules } from "./settings.service.js";
 import { elapsedMinutes } from "../utils/time.js";
 import { isOnline } from "../utils/connectivity.js";
 import { settle } from "../utils/offline-write.js";
 
 // -----------------------------------------------------------------------
-// Reglas de tiempo máximo por tipo de destino (requisito de la Junta
-// Directiva, ago-2026): ya no las configura el administrador — el sistema
-// las aplica automáticamente según a dónde va el visitante. También se
-// limita cuántos parqueos de visita puede tener EN USO al mismo tiempo un
-// mismo apartamento/oficina, para evitar abuso del espacio compartido.
+// Reglas de tiempo máximo por tipo de destino y máximo de parqueos
+// simultáneos por apartamento/oficina: las configura administración desde
+// Administración → Parqueos (ver settings.service.js: getTimeRules() lee un
+// valor en caché, disponible de inmediato aunque no haya conexión).
 // -----------------------------------------------------------------------
-export const MAX_MINUTES_OFFICE = 6 * 60; // 6 horas — oficinas y comercios
-export const MAX_MINUTES_APARTMENT = 24 * 60; // 24 horas — apartamentos
-export const MAX_SIMULTANEOUS_PER_DESTINATION = 3;
-
 function maxMinutesForDestination(destinationType) {
-  return destinationType === "office" ? MAX_MINUTES_OFFICE : MAX_MINUTES_APARTMENT;
+  const rules = getTimeRules();
+  return destinationType === "office" ? rules.maxMinutesOffice : rules.maxMinutesApartment;
 }
 
 // Si la app se está probando en una computadora local (localhost /
@@ -141,9 +138,10 @@ export async function registerEntry(spaceNumber, data) {
         )
       )
     );
-    if (activeSnap && activeSnap.size >= MAX_SIMULTANEOUS_PER_DESTINATION) {
+    const maxSimultaneous = getTimeRules().maxSimultaneousPerDestination;
+    if (activeSnap && activeSnap.size >= maxSimultaneous) {
       throw new OperationError(
-        `Ya hay ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita en uso para este ${destinationType === "office" ? "local" : "apartamento"} (máximo permitido). Debe liberarse uno antes de registrar otro.`
+        `Ya hay ${maxSimultaneous} parqueos de visita en uso para este ${destinationType === "office" ? "local" : "apartamento"} (máximo permitido). Debe liberarse uno antes de registrar otro.`
       );
     }
   }
@@ -457,6 +455,91 @@ export async function fetchSessionsByPlate(plate) {
 export async function correctSessionFields(sessionId, patch, note) {
   await updateDoc(doc(db, "parking_sessions", sessionId), { ...patch, corrected: true, correctionNote: note || "" });
   await logAudit("parking_session.correct_fields", { targetCollection: "parking_sessions", targetId: sessionId, details: { patch, note } });
+}
+
+/**
+ * Solo administración: agrega un espacio de parqueo nuevo (por ejemplo, uno
+ * de los 9 espacios individuales para motos, o cualquier otro que haga
+ * falta) sin tener que tocar el código. `number` es el identificador único
+ * del espacio (se usa tal cual como número de parqueo en toda la app).
+ */
+export async function addParkingSpace(number, type = "visitor") {
+  const trimmed = (number || "").trim();
+  if (!trimmed) throw new OperationError("Ingrese un número de parqueo.");
+  const ref = doc(db, "parking_spaces", trimmed);
+  const existing = await getDoc(ref);
+  if (existing.exists()) {
+    throw new OperationError(`Ya existe un parqueo con el número "${trimmed}".`);
+  }
+  await setDoc(ref, {
+    number: trimmed,
+    type,
+    status: "free",
+    sessionId: null,
+    visitorName: null,
+    visitorId: null,
+    plate: null,
+    visitorPhone: null,
+    isDemo: false,
+    destinationType: null,
+    destinationNumber: null,
+    entryAt: null,
+    entryGuardName: null,
+    entryLobby: null,
+    maxMinutesAtEntry: null,
+    updatedAt: serverTimestamp(),
+  });
+  await logAudit("parking_space.create", { targetCollection: "parking_spaces", targetId: trimmed, details: { type } });
+  return { ok: true };
+}
+
+/**
+ * Solo administración: cierra TODOS los registros de parqueo que sigan
+ * "abiertos" para un apartamento/oficina exacto (por ejemplo, para destrabar
+ * la Demostración cuando el límite de simultáneos ya está copado por
+ * registros viejos de prueba — ver demo.tab.js). Si el registro todavía es
+ * el que ocupa su espacio, usa el flujo normal de salida (registerExit, deja
+ * todo consistente); si el espacio ya cambió de mano o ya está libre (un
+ * registro "huérfano" que quedó abierto por alguna falla anterior), solo
+ * cierra el registro en sí, sin tocar el espacio de nadie más.
+ */
+export async function closeOpenSessionsForDestination(destinationType, destinationNumber, note) {
+  const openSnap = await getDocs(
+    query(
+      collection(db, "parking_sessions"),
+      where("status", "==", "open"),
+      where("destinationType", "==", destinationType),
+      where("destinationNumber", "==", destinationNumber)
+    )
+  );
+
+  const closed = [];
+  for (const d of openSnap.docs) {
+    const session = d.data();
+    const spaceSnap = await getDoc(doc(db, "parking_spaces", session.spaceNumber));
+    const space = spaceSnap.exists() ? spaceSnap.data() : null;
+    if (space && space.sessionId === d.id) {
+      await registerExit(session.spaceNumber, d.id, session.entryAt);
+    } else {
+      const exitAtValue = new Date();
+      await updateDoc(doc(db, "parking_sessions", d.id), {
+        status: "closed",
+        exitAt: exitAtValue,
+        corrected: true,
+        correctionNote: note || "Cerrado automáticamente por administración (registro sin espacio ocupado).",
+      });
+      await setDoc(doc(db, "public_status", d.id), { status: "closed", exitAt: exitAtValue }, { merge: true });
+    }
+    closed.push({ sessionId: d.id, visitorName: session.visitorName, plate: session.plate });
+  }
+
+  if (closed.length) {
+    await logAudit("parking.close_destination_sessions", {
+      targetCollection: "parking_sessions",
+      details: { destinationType, destinationNumber, count: closed.length, note },
+    });
+  }
+  return closed;
 }
 
 export { OperationError };

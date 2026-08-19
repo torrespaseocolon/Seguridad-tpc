@@ -1,6 +1,7 @@
 import { el, clear, toast, confirmDialog, openModal } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
-import { subscribeParkingSpaces, registerEntry, registerExit, buildConsultaUrl, OperationError, MAX_MINUTES_OFFICE, MAX_MINUTES_APARTMENT, MAX_SIMULTANEOUS_PER_DESTINATION } from "../services/parking.service.js";
+import { subscribeParkingSpaces, registerEntry, registerExit, buildConsultaUrl, OperationError } from "../services/parking.service.js";
+import { getTimeRules } from "../services/settings.service.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { qrImageUrl } from "../utils/qr.js";
 import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
@@ -26,6 +27,7 @@ const TYPE_BADGE = {
   visitor: null,
   disability: { icon: "wheelchair", text: "DISCAPACIDAD", cls: "badge--disability" },
   disabled: { icon: null, text: "FUERA DE SERVICIO", cls: "badge--disabled" },
+  moto: { icon: null, text: "MOTO", cls: "badge--info" },
 };
 
 export function renderParking(root) {
@@ -145,10 +147,11 @@ function openEntryModal(space) {
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
 
+  const rules = getTimeRules();
   const limitHint = el(
     "div",
     { class: "form-hint" },
-    `El sistema detecta automáticamente si es apartamento u oficina/comercio según la torre y el piso, y aplica el límite correspondiente: apartamentos hasta ${MAX_MINUTES_APARTMENT / 60} horas, oficinas/comercios hasta ${MAX_MINUTES_OFFICE / 60} horas. Máximo ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita simultáneos por apartamento/oficina.`
+    `El sistema detecta automáticamente si es apartamento u oficina/comercio según la torre y el piso, y aplica el límite correspondiente: apartamentos hasta ${rules.maxMinutesApartment / 60} horas, oficinas/comercios hasta ${rules.maxMinutesOffice / 60} horas. Máximo ${rules.maxSimultaneousPerDestination} parqueos de visita simultáneos por apartamento/oficina.`
   );
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR ENTRADA");

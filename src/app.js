@@ -1,4 +1,5 @@
 import { subscribeAuth, logout, getProfile } from "./services/auth.service.js";
+import { subscribeSettings } from "./services/settings.service.js";
 import { subscribeConnectivity } from "./utils/connectivity.js";
 import { el, clear } from "./utils/dom.js";
 import { icon } from "./utils/icons.js";
@@ -133,6 +134,7 @@ function registerRoutes() {
 }
 
 let routerStarted = false;
+let settingsSubscribed = false;
 
 subscribeAuth((state) => {
   if (!state) {
@@ -157,6 +159,15 @@ subscribeAuth((state) => {
   const { profile } = state;
   if (!shellBuilt) buildShell();
   updateHeaderUser(profile);
+
+  // Se suscribe una sola vez por sesión: mantiene en caché las reglas de
+  // tiempo de parqueo (ver settings.service.js) para que estén disponibles
+  // de inmediato, incluso sin conexión, cuando un guardia registre una
+  // entrada.
+  if (!settingsSubscribed) {
+    subscribeSettings();
+    settingsSubscribed = true;
+  }
 
   if (!routerStarted) {
     registerRoutes();

@@ -4,6 +4,7 @@ import {
   signOut,
   onAuthStateChanged,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js";
 import {
   doc,
@@ -107,6 +108,27 @@ export async function createStaffAccount({ name, email, tempPassword, role, lobb
     } catch (_) {
       /* ignore */
     }
+    return { ok: false, message: friendlyError(err) };
+  }
+}
+
+/**
+ * Administración → Usuarios: "en caso de pérdida" de contraseña, esta es la
+ * única forma disponible sin pagar el plan Blaze de Firebase — el plan
+ * gratuito (Spark) no permite que el administrador ESCRIBA directamente una
+ * contraseña nueva para otra persona (eso requiere el SDK de administrador,
+ * que solo corre en un servidor de pago). En su lugar, se envía un correo
+ * con un enlace para que la propia persona elija una contraseña nueva. La
+ * persona debe tener acceso a ese correo.
+ */
+export async function resetUserPassword(email) {
+  if (!currentProfile || currentProfile.role !== "admin") {
+    return { ok: false, message: "No tiene permisos para realizar esta acción." };
+  }
+  try {
+    await sendPasswordResetEmail(auth, email.trim());
+    return { ok: true };
+  } catch (err) {
     return { ok: false, message: friendlyError(err) };
   }
 }

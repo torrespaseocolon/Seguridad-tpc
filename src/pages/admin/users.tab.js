@@ -1,7 +1,7 @@
 import { el, clear, toast, openModal, loadingState, confirmDialog } from "../../utils/dom.js";
 import { icon } from "../../utils/icons.js";
 import { fetchUsers, updateUser, deleteUser } from "../../services/users.service.js";
-import { createStaffAccount, getProfile } from "../../services/auth.service.js";
+import { createStaffAccount, resetUserPassword, getProfile } from "../../services/auth.service.js";
 import { friendlyError } from "../../utils/errors.js";
 
 export async function renderUsersTab(root) {
@@ -81,6 +81,24 @@ function renderUserCard(user, reload) {
     }
   });
 
+  const resetPassBtn = el("button", { class: "btn btn--secondary" }, "Restablecer contraseña");
+  resetPassBtn.addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "Restablecer contraseña",
+      body: `Se enviará un correo a ${user.email} con un enlace para que ${user.name} elija una contraseña nueva. La persona debe tener acceso a ese correo — esta es la única forma disponible sin pasar al plan de pago de Firebase (ver README).`,
+      confirmText: "Sí, enviar",
+    });
+    if (!ok) return;
+    resetPassBtn.disabled = true;
+    const result = await resetUserPassword(user.email);
+    if (result.ok) {
+      toast(`Enlace enviado a ${user.email}.`, "success");
+    } else {
+      toast(result.message, "danger");
+    }
+    resetPassBtn.disabled = false;
+  });
+
   const deleteBtn = el("button", { class: "btn btn--danger" }, [icon("close", { size: 16 }), " Eliminar"]);
   deleteBtn.addEventListener("click", async () => {
     if (user.uid === getProfile().uid) {
@@ -115,7 +133,7 @@ function renderUserCard(user, reload) {
       el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Rol"), roleSelect]),
       el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Lobby"), lobbySelect]),
     ]),
-    el("div", { class: "row", style: "flex-wrap:wrap;" }, [saveBtn, toggleBtn, deleteBtn]),
+    el("div", { class: "row", style: "flex-wrap:wrap;" }, [saveBtn, toggleBtn, resetPassBtn, deleteBtn]),
   ]);
 }
 
