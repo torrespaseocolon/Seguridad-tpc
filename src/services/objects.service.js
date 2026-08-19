@@ -112,7 +112,10 @@ export async function loanObject({ objectId, objectName, borrowerType, borrowerN
         notes: notes || "",
         isDemo,
         status: "loaned",
-        loanedAt: serverTimestamp(),
+        // Hora del dispositivo, no serverTimestamp() — ver nota en
+        // parking.service.js: si se presta sin señal, evita que la hora
+        // quede fijada recién cuando sincroniza en vez de cuando pasó de verdad.
+        loanedAt: new Date(),
         loanedByUid: profile.uid,
         loanedByName: profile.name,
         lobby: profile.lobby || null,
@@ -149,7 +152,7 @@ export async function returnObject(loanId, { objectId, returnObservations, retur
   const writes = [
     updateDoc(doc(db, "object_loans", loanId), {
       status: "returned",
-      returnedAt: serverTimestamp(),
+      returnedAt: new Date(),
       returnedByUid: profile.uid,
       returnedByName: profile.name,
       returnObservations: returnObservations || "",

@@ -110,10 +110,17 @@ export async function registerEntry(spaceNumber, data) {
   const destinationNumber = data.destinationNumber.trim();
   const maxMinutes = maxMinutesForDestination(destinationType);
   // entryAtOverride: solo lo usa la Demostración, para poder mostrar un
-  // parqueo a punto de vencerse sin tener que esperar horas reales. Cualquier
-  // llamada normal (guardia registrando una entrada real) no la pasa, así que
-  // sigue usando la hora real del servidor.
-  const entryAtValue = data.entryAtOverride instanceof Date ? data.entryAtOverride : serverTimestamp();
+  // parqueo a punto de vencerse sin tener que esperar horas reales.
+  //
+  // Se usa la hora del propio dispositivo (new Date()), NO serverTimestamp():
+  // serverTimestamp() es un "marcador" que Firestore reemplaza recién cuando
+  // el SERVIDOR recibe la escritura — si el guardia registró la entrada sin
+  // señal y la conexión vuelve varios minutos después, ese marcador quedaría
+  // con la hora en que volvió la señal, no la hora real en que entró el
+  // vehículo, y el cronómetro "saltaría" de golpe cuando sincroniza. Con la
+  // hora del dispositivo, el valor queda fijo desde el momento real del
+  // registro y no cambia después, sincronice cuando sincronice.
+  const entryAtValue = data.entryAtOverride instanceof Date ? data.entryAtOverride : new Date();
 
   // Límite de parqueos de visita simultáneos por apartamento/oficina: es una
   // consulta de red (getDocs), así que solo se hace si hay señal. Sin
@@ -229,6 +236,10 @@ export async function registerExit(spaceNumber, sessionId, entryAt) {
   const profile = getProfile();
   const spaceRef = doc(db, "parking_spaces", spaceNumber);
   const durationMinutes = elapsedMinutes(entryAt);
+  // Hora del dispositivo, no serverTimestamp() — mismo motivo que entryAt en
+  // registerEntry: si no hay señal, no debe quedar la hora en que sincronizó
+  // en vez de la hora real en que el guardia registró la salida.
+  const exitAtValue = new Date();
 
   const writes = [
     updateDoc(spaceRef, {
@@ -252,13 +263,13 @@ export async function registerExit(spaceNumber, sessionId, entryAt) {
     writes.push(
       updateDoc(doc(db, "parking_sessions", sessionId), {
         status: "closed",
-        exitAt: serverTimestamp(),
+        exitAt: exitAtValue,
         exitGuardUid: profile.uid,
         exitGuardName: profile.name,
         exitLobby: profile.lobby || null,
         durationMinutes,
       }),
-      setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true })
+      setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: exitAtValue }, { merge: true })
     );
   }
   // Todas juntas, esperadas UNA sola vez con settle() (ver nota en registerEntry).

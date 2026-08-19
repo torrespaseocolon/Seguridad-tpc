@@ -4,7 +4,6 @@ import {
   setDoc,
   updateDoc,
   doc,
-  serverTimestamp,
   query,
   where,
   orderBy,
@@ -27,7 +26,10 @@ export async function createPackage({ apartment, recipientName, courier, trackin
       notes: notes || "",
       isDemo,
       status: "pending",
-      createdAt: serverTimestamp(),
+      // Hora del dispositivo, no serverTimestamp() — ver nota en
+      // parking.service.js: si se registra sin señal, evita que la hora
+      // quede fijada recién cuando sincroniza en vez de cuando pasó de verdad.
+      createdAt: new Date(),
       createdByUid: profile.uid,
       createdByName: profile.name,
       lobby: profile.lobby || null,
@@ -55,7 +57,7 @@ export async function deliverPackage(id, { recipientName, apartment } = {}) {
   await settle(
     updateDoc(doc(db, "packages", id), {
       status: "delivered",
-      deliveredAt: serverTimestamp(),
+      deliveredAt: new Date(),
       deliveredByUid: profile.uid,
       deliveredByName: profile.name,
       deliveredToName: recipientName || null,

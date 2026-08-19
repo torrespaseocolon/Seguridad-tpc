@@ -4,7 +4,6 @@ import {
   setDoc,
   updateDoc,
   doc,
-  serverTimestamp,
   query,
   where,
   orderBy,
@@ -31,7 +30,7 @@ export async function createAccessItem({ type, recipientName, apartment, tower, 
       notes: notes || "",
       isDemo,
       status: "pending",
-      createdAt: serverTimestamp(),
+      createdAt: new Date(), // hora del dispositivo, no serverTimestamp() — ver nota en parking.service.js
       createdByUid: profile.uid,
       createdByName: profile.name,
       deliveredAt: null,
@@ -55,7 +54,7 @@ export async function deliverAccessItem(id) {
   await settle(
     updateDoc(doc(db, "access_items", id), {
       status: "delivered",
-      deliveredAt: serverTimestamp(),
+      deliveredAt: new Date(),
       deliveredByUid: profile.uid,
       deliveredByName: profile.name,
       deliveredLobby: profile.lobby || null,
