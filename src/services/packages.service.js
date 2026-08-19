@@ -1,7 +1,7 @@
 import { db } from "../firebase/firebase-init.js";
 import {
   collection,
-  addDoc,
+  setDoc,
   updateDoc,
   doc,
   serverTimestamp,
@@ -13,28 +13,32 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { getProfile } from "./auth.service.js";
 import { logAudit } from "./audit.service.js";
+import { settle } from "../utils/offline-write.js";
 
 export async function createPackage({ apartment, recipientName, courier, trackingNumber, notes, isDemo = false }) {
   const profile = getProfile();
-  const ref = await addDoc(collection(db, "packages"), {
-    apartment,
-    recipientName,
-    courier,
-    trackingNumber: trackingNumber || "",
-    notes: notes || "",
-    isDemo,
-    status: "pending",
-    createdAt: serverTimestamp(),
-    createdByUid: profile.uid,
-    createdByName: profile.name,
-    lobby: profile.lobby || null,
-    deliveredAt: null,
-    deliveredByUid: null,
-    deliveredByName: null,
-    deliveredToName: null,
-    deliveredToApartment: null,
-  });
-  await logAudit("package.create", { targetCollection: "packages", targetId: ref.id, details: { apartment, courier } });
+  const ref = doc(collection(db, "packages"));
+  await settle(
+    setDoc(ref, {
+      apartment,
+      recipientName,
+      courier,
+      trackingNumber: trackingNumber || "",
+      notes: notes || "",
+      isDemo,
+      status: "pending",
+      createdAt: serverTimestamp(),
+      createdByUid: profile.uid,
+      createdByName: profile.name,
+      lobby: profile.lobby || null,
+      deliveredAt: null,
+      deliveredByUid: null,
+      deliveredByName: null,
+      deliveredToName: null,
+      deliveredToApartment: null,
+    })
+  );
+  logAudit("package.create", { targetCollection: "packages", targetId: ref.id, details: { apartment, courier } });
   return ref.id;
 }
 
@@ -48,15 +52,17 @@ export async function fetchPendingPackages(max = 100) {
 /** recipientName/apartment: bitácora de quién retiró el paquete (ver nota igual en found-items.service.js). */
 export async function deliverPackage(id, { recipientName, apartment } = {}) {
   const profile = getProfile();
-  await updateDoc(doc(db, "packages", id), {
-    status: "delivered",
-    deliveredAt: serverTimestamp(),
-    deliveredByUid: profile.uid,
-    deliveredByName: profile.name,
-    deliveredToName: recipientName || null,
-    deliveredToApartment: apartment || "",
-  });
-  await logAudit("package.deliver", { targetCollection: "packages", targetId: id, details: { recipientName, apartment } });
+  await settle(
+    updateDoc(doc(db, "packages", id), {
+      status: "delivered",
+      deliveredAt: serverTimestamp(),
+      deliveredByUid: profile.uid,
+      deliveredByName: profile.name,
+      deliveredToName: recipientName || null,
+      deliveredToApartment: apartment || "",
+    })
+  );
+  logAudit("package.deliver", { targetCollection: "packages", targetId: id, details: { recipientName, apartment } });
 }
 
 export async function fetchPackageHistory(max = 100, { from = null, to = null } = {}) {

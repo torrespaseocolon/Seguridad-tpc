@@ -91,9 +91,11 @@ antes de escribirle a soporte.
       aparece la franja roja superior.
 - [ ] Al reconectar, el indicador vuelve a 🟢 CONECTADO sin necesidad de recargar la página.
 - [ ] Con el dispositivo sin conexión, registrar un paquete/tarjeta/objeto/entrada de parqueo
-      (Lobby B) muestra el mensaje de éxito **en pocos segundos** (no se queda en "GUARDANDO..."
-      esperando). Al reconectar, el registro aparece en la base de datos (revisar en Firebase
-      Console → Firestore, o que otro dispositivo ya conectado lo vea aparecer).
+      (Lobby B) muestra el mensaje de éxito **en 3 segundos o menos** (no se queda en
+      "GUARDANDO..." esperando — 3 segundos es el límite que usa `settle()`, ver
+      `src/utils/offline-write.js`). Al reconectar, el registro aparece en la base de datos
+      (revisar en Firebase Console → Firestore, o que otro dispositivo ya conectado lo vea
+      aparecer).
 - [ ] Escanear el código QR de un parqueo ocupado desde el celular (con la app principal ya
       abierta en otra pestaña del mismo dispositivo) y presionar "Registrar salida" desde esa
       pestaña de consulta guarda sin quedarse colgado.

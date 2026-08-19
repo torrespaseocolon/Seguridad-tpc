@@ -9,18 +9,23 @@ import {
   getDocs,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { getProfile } from "./auth.service.js";
+import { settle } from "../utils/offline-write.js";
 
 /**
  * Registra una acción en audit_logs. Se llama después de cada operación
  * importante (entrada, salida, entrega, préstamo, corrección, cambios de
  * administración). Es una escritura adicional pequeña — el costo está
  * explicado en docs/MODELO_DE_DATOS.md.
+ *
+ * Usa settle() (ver src/utils/offline-write.js) para no quedarse colgada
+ * esperando confirmación del servidor si no hay señal — la auditoría nunca
+ * debe bloquear la operación principal del guardia.
  */
 export async function logAudit(action, { targetCollection = null, targetId = null, details = {} } = {}) {
   const profile = getProfile();
   if (!profile) return;
   try {
-    await addDoc(collection(db, "audit_logs"), {
+    await settle(addDoc(collection(db, "audit_logs"), {
       userUid: profile.uid,
       userName: profile.name,
       userRole: profile.role,
@@ -29,10 +34,8 @@ export async function logAudit(action, { targetCollection = null, targetId = nul
       targetId,
       details,
       createdAt: serverTimestamp(),
-    });
+    }));
   } catch (err) {
-    // La auditoría nunca debe bloquear la operación principal del guardia;
-    // si falla, solo se registra en consola para diagnóstico.
     console.error("[SEGURIDAD TPC] No se pudo registrar auditoría:", err);
   }
 }

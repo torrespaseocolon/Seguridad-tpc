@@ -1,7 +1,7 @@
 import { db } from "../firebase/firebase-init.js";
 import {
   collection,
-  addDoc,
+  setDoc,
   updateDoc,
   doc,
   serverTimestamp,
@@ -13,6 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { getProfile } from "./auth.service.js";
 import { logAudit } from "./audit.service.js";
+import { settle } from "../utils/offline-write.js";
 
 export const CONDITION_LABELS = { bueno: "Buen estado", danado: "Con daño / observación" };
 
@@ -26,24 +27,27 @@ export const CONDITION_LABELS = { bueno: "Buen estado", danado: "Con daño / obs
  */
 export async function createFoundItem({ description, foundLocation, condition, notes, isDemo = false }) {
   const profile = getProfile();
-  const ref = await addDoc(collection(db, "found_items"), {
-    description,
-    foundLocation,
-    condition,
-    notes: notes || "",
-    isDemo,
-    status: "pending",
-    createdAt: serverTimestamp(),
-    createdByUid: profile.uid,
-    createdByName: profile.name,
-    lobby: profile.lobby || null,
-    deliveredAt: null,
-    deliveredByUid: null,
-    deliveredByName: null,
-    deliveredToName: null,
-    deliveredToApartment: null,
-  });
-  await logAudit("found_item.create", { targetCollection: "found_items", targetId: ref.id, details: { description, foundLocation } });
+  const ref = doc(collection(db, "found_items"));
+  await settle(
+    setDoc(ref, {
+      description,
+      foundLocation,
+      condition,
+      notes: notes || "",
+      isDemo,
+      status: "pending",
+      createdAt: serverTimestamp(),
+      createdByUid: profile.uid,
+      createdByName: profile.name,
+      lobby: profile.lobby || null,
+      deliveredAt: null,
+      deliveredByUid: null,
+      deliveredByName: null,
+      deliveredToName: null,
+      deliveredToApartment: null,
+    })
+  );
+  logAudit("found_item.create", { targetCollection: "found_items", targetId: ref.id, details: { description, foundLocation } });
   return ref.id;
 }
 
@@ -56,15 +60,17 @@ export async function fetchPendingFoundItems(max = 100) {
 
 export async function deliverFoundItem(id, { recipientName, apartment }) {
   const profile = getProfile();
-  await updateDoc(doc(db, "found_items", id), {
-    status: "delivered",
-    deliveredAt: serverTimestamp(),
-    deliveredByUid: profile.uid,
-    deliveredByName: profile.name,
-    deliveredToName: recipientName,
-    deliveredToApartment: apartment || "",
-  });
-  await logAudit("found_item.deliver", { targetCollection: "found_items", targetId: id, details: { recipientName, apartment } });
+  await settle(
+    updateDoc(doc(db, "found_items", id), {
+      status: "delivered",
+      deliveredAt: serverTimestamp(),
+      deliveredByUid: profile.uid,
+      deliveredByName: profile.name,
+      deliveredToName: recipientName,
+      deliveredToApartment: apartment || "",
+    })
+  );
+  logAudit("found_item.deliver", { targetCollection: "found_items", targetId: id, details: { recipientName, apartment } });
 }
 
 export async function fetchFoundItemHistory(max = 100, { from = null, to = null } = {}) {

@@ -18,6 +18,7 @@ import { getProfile } from "./auth.service.js";
 import { logAudit } from "./audit.service.js";
 import { elapsedMinutes } from "../utils/time.js";
 import { isOnline } from "../utils/connectivity.js";
+import { settle } from "../utils/offline-write.js";
 
 // -----------------------------------------------------------------------
 // Reglas de tiempo máximo por tipo de destino (requisito de la Junta
@@ -99,15 +100,20 @@ export async function registerEntry(spaceNumber, data) {
   // esperando — el guardia ya ve la pantalla "SIN CONEXIÓN" y sabe que está
   // operando con ese riesgo pequeño y aceptado.
   if (isOnline()) {
-    const activeSnap = await getDocs(
-      query(
-        collection(db, "parking_sessions"),
-        where("status", "==", "open"),
-        where("destinationType", "==", destinationType),
-        where("destinationNumber", "==", destinationNumber)
+    // settle() por si "en línea" es un falso positivo (wifi conectado pero
+    // sin internet real): en ese caso, en vez de colgarse, se omite el
+    // chequeo después de esperar un poco en vez de nunca.
+    const activeSnap = await settle(
+      getDocs(
+        query(
+          collection(db, "parking_sessions"),
+          where("status", "==", "open"),
+          where("destinationType", "==", destinationType),
+          where("destinationNumber", "==", destinationNumber)
+        )
       )
     );
-    if (activeSnap.size >= MAX_SIMULTANEOUS_PER_DESTINATION) {
+    if (activeSnap && activeSnap.size >= MAX_SIMULTANEOUS_PER_DESTINATION) {
       throw new OperationError(
         `Ya hay ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita en uso para este ${destinationType === "office" ? "local" : "apartamento"} (máximo permitido). Debe liberarse uno antes de registrar otro.`
       );
@@ -121,59 +127,67 @@ export async function registerEntry(spaceNumber, data) {
   const spaceRef = doc(db, "parking_spaces", spaceNumber);
   const sessionRef = doc(collection(db, "parking_sessions"));
 
-  await setDoc(sessionRef, {
-    spaceNumber,
-    status: "open",
-    visitorName: data.visitorName,
-    visitorId: data.visitorId,
-    plate: data.plate,
-    visitorPhone: data.visitorPhone || "",
-    isDemo: !!data.isDemo,
-    destinationType,
-    destinationNumber,
-    entryAt: entryAtValue,
-    entryGuardUid: profile.uid,
-    entryGuardName: profile.name,
-    entryLobby: profile.lobby || data.lobbyOverride || null,
-    exitAt: null,
-    exitGuardUid: null,
-    exitGuardName: null,
-    exitLobby: null,
-    durationMinutes: null,
-    maxMinutesAtEntry: maxMinutes,
-    corrected: false,
-    correctionNote: "",
-  });
+  // Las 3 escrituras son independientes entre sí (no necesitan esperarse una
+  // a otra), así que se disparan juntas y se espera el conjunto UNA sola vez
+  // con settle() — si no hay señal, Firestore ya las dejó guardadas en su
+  // cola local y las sincroniza sola; esta función no se queda colgada
+  // esperando la confirmación del servidor que, sin señal, no llega.
+  await settle(
+    Promise.all([
+      setDoc(sessionRef, {
+        spaceNumber,
+        status: "open",
+        visitorName: data.visitorName,
+        visitorId: data.visitorId,
+        plate: data.plate,
+        visitorPhone: data.visitorPhone || "",
+        isDemo: !!data.isDemo,
+        destinationType,
+        destinationNumber,
+        entryAt: entryAtValue,
+        entryGuardUid: profile.uid,
+        entryGuardName: profile.name,
+        entryLobby: profile.lobby || data.lobbyOverride || null,
+        exitAt: null,
+        exitGuardUid: null,
+        exitGuardName: null,
+        exitLobby: null,
+        durationMinutes: null,
+        maxMinutesAtEntry: maxMinutes,
+        corrected: false,
+        correctionNote: "",
+      }),
+      updateDoc(spaceRef, {
+        status: "occupied",
+        sessionId: sessionRef.id,
+        visitorName: data.visitorName,
+        visitorId: data.visitorId,
+        plate: data.plate,
+        visitorPhone: data.visitorPhone || "",
+        isDemo: !!data.isDemo,
+        destinationType,
+        destinationNumber,
+        entryAt: entryAtValue,
+        entryGuardName: profile.name,
+        entryLobby: profile.lobby || data.lobbyOverride || null,
+        maxMinutesAtEntry: maxMinutes,
+        updatedAt: serverTimestamp(),
+      }),
+      // Espejo público (sin datos personales) para la consulta por QR.
+      setDoc(doc(db, "public_status", sessionRef.id), {
+        spaceNumber,
+        destinationType,
+        entryAt: entryAtValue,
+        maxMinutesAtEntry: maxMinutes,
+        extendedMinutes: 0,
+        status: "open",
+        exitAt: null,
+      }),
+    ])
+  );
 
-  await updateDoc(spaceRef, {
-    status: "occupied",
-    sessionId: sessionRef.id,
-    visitorName: data.visitorName,
-    visitorId: data.visitorId,
-    plate: data.plate,
-    visitorPhone: data.visitorPhone || "",
-    isDemo: !!data.isDemo,
-    destinationType,
-    destinationNumber,
-    entryAt: entryAtValue,
-    entryGuardName: profile.name,
-    entryLobby: profile.lobby || data.lobbyOverride || null,
-    maxMinutesAtEntry: maxMinutes,
-    updatedAt: serverTimestamp(),
-  });
-
-  // Espejo público (sin datos personales) para la consulta por QR.
-  await setDoc(doc(db, "public_status", sessionRef.id), {
-    spaceNumber,
-    destinationType,
-    entryAt: entryAtValue,
-    maxMinutesAtEntry: maxMinutes,
-    extendedMinutes: 0,
-    status: "open",
-    exitAt: null,
-  });
-
-  await logAudit("parking.entry", {
+  // Sin await: la auditoría nunca debe sumar más espera a esta operación.
+  logAudit("parking.entry", {
     targetCollection: "parking_sessions",
     targetId: sessionRef.id,
     details: { spaceNumber, plate: data.plate },
@@ -195,36 +209,41 @@ export async function registerExit(spaceNumber, sessionId, entryAt) {
   const spaceRef = doc(db, "parking_spaces", spaceNumber);
   const durationMinutes = elapsedMinutes(entryAt);
 
+  const writes = [
+    updateDoc(spaceRef, {
+      status: "free",
+      sessionId: null,
+      visitorName: null,
+      visitorId: null,
+      plate: null,
+      visitorPhone: null,
+      isDemo: false,
+      destinationType: null,
+      destinationNumber: null,
+      entryAt: null,
+      entryGuardName: null,
+      entryLobby: null,
+      maxMinutesAtEntry: null,
+      updatedAt: serverTimestamp(),
+    }),
+  ];
   if (sessionId) {
-    await updateDoc(doc(db, "parking_sessions", sessionId), {
-      status: "closed",
-      exitAt: serverTimestamp(),
-      exitGuardUid: profile.uid,
-      exitGuardName: profile.name,
-      exitLobby: profile.lobby || null,
-      durationMinutes,
-    });
-    await setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true });
+    writes.push(
+      updateDoc(doc(db, "parking_sessions", sessionId), {
+        status: "closed",
+        exitAt: serverTimestamp(),
+        exitGuardUid: profile.uid,
+        exitGuardName: profile.name,
+        exitLobby: profile.lobby || null,
+        durationMinutes,
+      }),
+      setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true })
+    );
   }
+  // Todas juntas, esperadas UNA sola vez con settle() (ver nota en registerEntry).
+  await settle(Promise.all(writes));
 
-  await updateDoc(spaceRef, {
-    status: "free",
-    sessionId: null,
-    visitorName: null,
-    visitorId: null,
-    plate: null,
-    visitorPhone: null,
-    isDemo: false,
-    destinationType: null,
-    destinationNumber: null,
-    entryAt: null,
-    entryGuardName: null,
-    entryLobby: null,
-    maxMinutesAtEntry: null,
-    updatedAt: serverTimestamp(),
-  });
-
-  await logAudit("parking.exit", {
+  logAudit("parking.exit", {
     targetCollection: "parking_sessions",
     targetId: sessionId,
     details: { spaceNumber, durationMinutes },

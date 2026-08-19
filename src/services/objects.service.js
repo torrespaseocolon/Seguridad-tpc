@@ -2,7 +2,6 @@ import { db } from "../firebase/firebase-init.js";
 import {
   collection,
   doc,
-  addDoc,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -16,6 +15,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { getProfile } from "./auth.service.js";
 import { logAudit } from "./audit.service.js";
+import { settle } from "../utils/offline-write.js";
 
 class OperationError extends Error {}
 
@@ -43,29 +43,32 @@ export async function fetchAllObjects() {
 
 export async function createObject({ name, category, identifier, quantity, description, lobby, isDemo = false }) {
   const profile = getProfile();
-  const ref = await addDoc(collection(db, "objects"), {
-    name,
-    category: category || "",
-    identifier: identifier || "",
-    description: description || "",
-    lobby,
-    totalQuantity: quantity,
-    availableQuantity: quantity,
-    active: true,
-    isDemo,
-    createdAt: serverTimestamp(),
-    createdBy: profile.uid,
-    updatedAt: serverTimestamp(),
-    updatedBy: profile.uid,
-  });
-  await logAudit("object.create", { targetCollection: "objects", targetId: ref.id, details: { name, quantity, lobby } });
+  const ref = doc(collection(db, "objects"));
+  await settle(
+    setDoc(ref, {
+      name,
+      category: category || "",
+      identifier: identifier || "",
+      description: description || "",
+      lobby,
+      totalQuantity: quantity,
+      availableQuantity: quantity,
+      active: true,
+      isDemo,
+      createdAt: serverTimestamp(),
+      createdBy: profile.uid,
+      updatedAt: serverTimestamp(),
+      updatedBy: profile.uid,
+    })
+  );
+  logAudit("object.create", { targetCollection: "objects", targetId: ref.id, details: { name, quantity, lobby } });
   return ref.id;
 }
 
 export async function updateObject(id, patch) {
   const profile = getProfile();
-  await updateDoc(doc(db, "objects", id), { ...patch, updatedAt: serverTimestamp(), updatedBy: profile.uid });
-  await logAudit("object.update", { targetCollection: "objects", targetId: id, details: patch });
+  await settle(updateDoc(doc(db, "objects", id), { ...patch, updatedAt: serverTimestamp(), updatedBy: profile.uid }));
+  logAudit("object.update", { targetCollection: "objects", targetId: id, details: patch });
 }
 
 export async function setObjectActive(id, active) {
@@ -73,8 +76,8 @@ export async function setObjectActive(id, active) {
 }
 
 export async function deleteObject(id, name) {
-  await deleteDoc(doc(db, "objects", id));
-  await logAudit("object.delete", { targetCollection: "objects", targetId: id, details: { name } });
+  await settle(deleteDoc(doc(db, "objects", id)));
+  logAudit("object.delete", { targetCollection: "objects", targetId: id, details: { name } });
 }
 
 /**
@@ -96,28 +99,34 @@ export async function loanObject({ objectId, objectName, borrowerType, borrowerN
   const objectRef = doc(db, "objects", objectId);
   const loanRef = doc(collection(db, "object_loans"));
 
-  await setDoc(loanRef, {
-    objectId,
-    objectName,
-    borrowerType,
-    borrowerName,
-    apartment: apartment || "",
-    notes: notes || "",
-    isDemo,
-    status: "loaned",
-    loanedAt: serverTimestamp(),
-    loanedByUid: profile.uid,
-    loanedByName: profile.name,
-    lobby: profile.lobby || null,
-    returnedAt: null,
-    returnedByUid: null,
-    returnedByName: null,
-    returnObservations: "",
-    returnCondition: "",
-  });
-  await updateDoc(objectRef, { availableQuantity: increment(-1) });
+  // Las 2 escrituras son independientes, se disparan juntas y se esperan
+  // UNA sola vez con settle() (ver nota igual en parking.service.js).
+  await settle(
+    Promise.all([
+      setDoc(loanRef, {
+        objectId,
+        objectName,
+        borrowerType,
+        borrowerName,
+        apartment: apartment || "",
+        notes: notes || "",
+        isDemo,
+        status: "loaned",
+        loanedAt: serverTimestamp(),
+        loanedByUid: profile.uid,
+        loanedByName: profile.name,
+        lobby: profile.lobby || null,
+        returnedAt: null,
+        returnedByUid: null,
+        returnedByName: null,
+        returnObservations: "",
+        returnCondition: "",
+      }),
+      updateDoc(objectRef, { availableQuantity: increment(-1) }),
+    ])
+  );
 
-  await logAudit("object.loan", { targetCollection: "object_loans", targetId: loanRef.id, details: { objectId, borrowerName } });
+  logAudit("object.loan", { targetCollection: "object_loans", targetId: loanRef.id, details: { objectId, borrowerName } });
   return loanRef.id;
 }
 
@@ -137,20 +146,22 @@ export async function fetchActiveLoans() {
 export async function returnObject(loanId, { objectId, returnObservations, returnCondition }) {
   const profile = getProfile();
 
-  await updateDoc(doc(db, "object_loans", loanId), {
-    status: "returned",
-    returnedAt: serverTimestamp(),
-    returnedByUid: profile.uid,
-    returnedByName: profile.name,
-    returnObservations: returnObservations || "",
-    returnCondition: returnCondition || "bueno",
-  });
-
+  const writes = [
+    updateDoc(doc(db, "object_loans", loanId), {
+      status: "returned",
+      returnedAt: serverTimestamp(),
+      returnedByUid: profile.uid,
+      returnedByName: profile.name,
+      returnObservations: returnObservations || "",
+      returnCondition: returnCondition || "bueno",
+    }),
+  ];
   if (objectId) {
-    await updateDoc(doc(db, "objects", objectId), { availableQuantity: increment(1) });
+    writes.push(updateDoc(doc(db, "objects", objectId), { availableQuantity: increment(1) }));
   }
+  await settle(Promise.all(writes));
 
-  await logAudit("object.return", { targetCollection: "object_loans", targetId: loanId, details: { returnCondition } });
+  logAudit("object.return", { targetCollection: "object_loans", targetId: loanId, details: { returnCondition } });
 }
 
 export async function fetchLoanHistory(max = 100, { from = null, to = null } = {}) {

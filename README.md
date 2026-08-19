@@ -160,17 +160,27 @@ mantenerse dentro del plan gratuito:
 - Un Service Worker guarda en caché **solo los archivos propios de la app** (HTML/CSS/JS), para
   que la aplicación abra y muestre su interfaz aunque el dispositivo pierda la señal por un
   momento. **Nunca** cachea respuestas de Firebase.
-- Firestore mantiene su propia caché local (`persistentLocalCache`), lo que activa también su cola
-  de escritura offline: cualquier `addDoc`/`updateDoc`/`setDoc`/`deleteDoc` hecho sin conexión
-  queda guardado en el dispositivo y se sincroniza solo en cuanto vuelve la señal, sin código
-  adicional. El indicador de conexión (🟢/🔴) en el encabezado es solo informativo — no bloquea el
-  envío de formularios.
-- **Lo que sí tiene un límite técnico real**: las consultas agregadas (`getCountFromServer`) y las
-  transacciones (`runTransaction`) de Firestore **no pueden ejecutarse sin conexión** — ambas
-  necesitan ida y vuelta al servidor. Por eso Paquetes y Tarjetas/Stickers (que nunca las usaron)
-  siempre funcionaron offline, mientras que Parqueos y Objetos (préstamo/devolución) las usaban
-  para blindarse contra dos personas tocando el mismo recurso al mismo tiempo, y por eso offline
-  fallaban.
+- Firestore mantiene su propia caché local (`persistentLocalCache`, con `persistentMultipleTabManager`
+  para que varias pestañas del mismo dispositivo — por ejemplo la app principal y una consulta
+  abierta desde un QR — puedan compartir esa caché sin pisarse), lo que activa también su cola de
+  escritura offline: cualquier `addDoc`/`updateDoc`/`setDoc`/`deleteDoc` hecho sin conexión queda
+  guardado en el dispositivo de inmediato y se sincroniza solo en cuanto vuelve la señal.
+- **Gotcha importante (ago-2026) — por qué existe `src/utils/offline-write.js`**: que el dato quede
+  guardado localmente no significa que la *promesa* que devuelven `addDoc`/`updateDoc`/`setDoc`
+  se resuelva rápido. Es comportamiento documentado del SDK: esa promesa solo se resuelve cuando el
+  **servidor** confirma la escritura — sin conexión, esa confirmación nunca llega, así que un
+  simple `await updateDoc(...)` se queda esperando indefinidamente aunque el dato ya esté a salvo
+  en el dispositivo. Por eso todas las funciones de escritura de guardia (Parqueos, Paquetes,
+  Objetos, Tarjetas, Objetos encontrados, y `logAudit`) usan `settle()` de
+  `src/utils/offline-write.js`: corre la escritura real en paralelo con un límite de tiempo corto
+  (3 segundos) y sigue adelante apenas pasa ese límite, sin esperar la confirmación del servidor —
+  la escritura sigue su curso en segundo plano igual. Si escribís una función de escritura nueva,
+  envolvé la llamada con `settle(...)` para que se beneficie de esto también.
+- **Lo que sí tiene un límite técnico real** (no lo resuelve `settle()`): las consultas agregadas
+  (`getCountFromServer`) y las transacciones (`runTransaction`) de Firestore **no pueden
+  ejecutarse sin conexión** — ambas necesitan ida y vuelta al servidor, y no hay forma de que
+  devuelvan un resultado "local" mientras tanto. Por eso Parqueos y Objetos (préstamo/devolución)
+  dejaron de usarlas (ver más abajo).
 - **Decisión histórica (ago-2026, ya superada) y su reemplazo actual**: originalmente no se
   habilitó offline para Parqueos porque, si Lobby A y Lobby B pudieran registrar entradas sin
   conexión, dos guardias podrían ocupar el mismo espacio sin que el sistema lo note hasta
