@@ -108,6 +108,9 @@ Historial permanente de cada entrada/salida. Nunca se borra.
 | `status` | `"pending"` \| `"delivered"` |
 | `createdAt`, `createdByUid`, `createdByName`, `lobby` | — |
 | `deliveredAt`, `deliveredByUid`, `deliveredByName` | — |
+| `deliveredToName`, `deliveredToApartment` | string — **bitácora**: nombre y apartamento/oficina
+  de quien retiró el paquete (puede ser distinto del destinatario original, ej. un familiar o
+  empleada doméstica), capturados al momento de la entrega. |
 
 ### `objects/{id}` (catálogo de objetos en préstamo)
 | Campo | Tipo |

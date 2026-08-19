@@ -147,6 +147,7 @@ async function renderPackages(content, range) {
   content.appendChild(exportButton("historial_paquetes.csv", rows.map((r) => ({
     apartamento: r.apartment, destinatario: r.recipientName, empresa: r.courier, estado: r.status,
     recibido: formatDateTime(r.createdAt), guardia_recibio: r.createdByName, entregado: formatDateTime(r.deliveredAt), guardia_entrego: r.deliveredByName,
+    entregado_a: r.deliveredToName, apartamento_retira: r.deliveredToApartment,
   }))));
   content.appendChild(simpleList(rows, (r) => `Apt. ${r.apartment} — ${r.recipientName} (${r.status === "pending" ? "Pendiente" : "Entregado"})`));
 }

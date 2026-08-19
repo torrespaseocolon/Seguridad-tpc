@@ -5,6 +5,7 @@ import { createPackage, fetchPendingPackages, deliverPackage } from "../services
 import { formatDateTime, elapsedDays } from "../utils/time.js";
 import { navigate } from "../router.js";
 import { friendlyError } from "../utils/errors.js";
+import { getProfile } from "../services/auth.service.js";
 
 // Recomendación por defecto (7 días): tiempo razonable para que un paquete
 // siga sin recogerse antes de que valga la pena avisarle al residente. Es
@@ -66,25 +67,7 @@ function renderPackageCard(pkg, reload) {
   const days = elapsedDays(pkg.createdAt);
   const isOld = days >= OLD_PENDING_DAYS;
   const deliverBtn = el("button", { class: "btn btn--success btn--block" }, "ENTREGADO");
-  deliverBtn.addEventListener("click", async () => {
-    const ok = await confirmDialog({
-      title: "Confirmar entrega",
-      body: `¿Confirma la entrega del paquete de ${pkg.courier} para ${pkg.recipientName} (Apt. ${pkg.apartment})?`,
-      confirmText: "Sí, entregar",
-    });
-    if (!ok) return;
-    deliverBtn.disabled = true;
-    deliverBtn.textContent = "GUARDANDO...";
-    try {
-      await deliverPackage(pkg.id);
-      toast("Paquete marcado como entregado.", "success");
-      reload();
-    } catch (err) {
-      toast(friendlyError(err), "danger");
-      deliverBtn.disabled = false;
-      deliverBtn.textContent = "ENTREGADO";
-    }
-  });
+  deliverBtn.addEventListener("click", () => openDeliverPackageModal(pkg, reload));
 
   return el("div", { class: "card", style: isOld ? "border-color:var(--color-danger);" : "" }, [
     el("div", { class: "row row--between" }, [
@@ -99,8 +82,61 @@ function renderPackageCard(pkg, reload) {
   ].filter(Boolean));
 }
 
+/**
+ * Al entregar, pide nombre (y apartamento, precargado con el del paquete)
+ * de quien lo retira — no siempre es la misma persona a nombre de quien
+ * llegó el paquete (puede recogerlo un familiar, empleada doméstica, etc.).
+ * Queda como bitácora para poder investigar después una entrega equivocada.
+ */
+function openDeliverPackageModal(pkg, reload) {
+  const nameInput = el("input", { class: "form-control", required: true, value: pkg.recipientName || "" });
+  const apartmentInput = el("input", { class: "form-control", value: pkg.apartment || "" });
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const submitBtn = el("button", { class: "btn btn--success btn--block btn--lg" }, "CONFIRMAR ENTREGA");
+
+  const content = el("div", { class: "stack" }, [
+    el("div", { class: "modal__title" }, `Entregar paquete de ${pkg.courier}`),
+    el("div", { class: "text-secondary" }, `Destinatario original: ${pkg.recipientName} (Apt. ${pkg.apartment})`),
+    field("Nombre de quien lo retira *", nameInput),
+    field("Apartamento/oficina", apartmentInput),
+    errorBox,
+    submitBtn,
+  ]);
+
+  const closeFn = openModal(content);
+  nameInput.focus();
+
+  submitBtn.addEventListener("click", async () => {
+    if (!nameInput.value.trim()) {
+      errorBox.textContent = "Ingrese el nombre de quien retira el paquete.";
+      errorBox.style.display = "block";
+      return;
+    }
+    const ok = await confirmDialog({
+      title: "Confirmar entrega",
+      body: `¿Confirma la entrega del paquete de ${pkg.courier} a ${nameInput.value.trim()}?`,
+    });
+    if (!ok) return;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "GUARDANDO...";
+    try {
+      await deliverPackage(pkg.id, { recipientName: nameInput.value.trim(), apartment: apartmentInput.value.trim() });
+      toast("Paquete marcado como entregado.", "success");
+      closeFn();
+      reload();
+    } catch (err) {
+      errorBox.textContent = friendlyError(err);
+      errorBox.style.display = "block";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "CONFIRMAR ENTREGA";
+    }
+  });
+}
+
 function openNewPackageModal(reload) {
-  const destField = createDestinationField({ required: true });
+  const profile = getProfile();
+  const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
+  const destField = createDestinationField({ defaultTower, required: true });
   const nameInput = el("input", { class: "form-control", required: true });
   const courierInput = el("input", { class: "form-control", required: true, placeholder: "Ej. Correos de Costa Rica, Amazon, Uber..." });
   const trackingInput = el("input", { class: "form-control" });

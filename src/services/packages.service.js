@@ -31,6 +31,8 @@ export async function createPackage({ apartment, recipientName, courier, trackin
     deliveredAt: null,
     deliveredByUid: null,
     deliveredByName: null,
+    deliveredToName: null,
+    deliveredToApartment: null,
   });
   await logAudit("package.create", { targetCollection: "packages", targetId: ref.id, details: { apartment, courier } });
   return ref.id;
@@ -43,15 +45,18 @@ export async function fetchPendingPackages(max = 100) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-export async function deliverPackage(id) {
+/** recipientName/apartment: bitácora de quién retiró el paquete (ver nota igual en found-items.service.js). */
+export async function deliverPackage(id, { recipientName, apartment } = {}) {
   const profile = getProfile();
   await updateDoc(doc(db, "packages", id), {
     status: "delivered",
     deliveredAt: serverTimestamp(),
     deliveredByUid: profile.uid,
     deliveredByName: profile.name,
+    deliveredToName: recipientName || null,
+    deliveredToApartment: apartment || "",
   });
-  await logAudit("package.deliver", { targetCollection: "packages", targetId: id });
+  await logAudit("package.deliver", { targetCollection: "packages", targetId: id, details: { recipientName, apartment } });
 }
 
 export async function fetchPackageHistory(max = 100, { from = null, to = null } = {}) {

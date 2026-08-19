@@ -37,10 +37,16 @@ antes de escribirle a soporte.
       puede quedar un registro huérfano; usar "Correcciones" para arreglarlo a mano.
 
 ## Paquetes
+- [ ] Crear un paquete nuevo deja la Torre ya marcada según el lobby del guardia (Lobby A → Torre
+      A, Lobby B → Torre B) — se puede tocar el otro botón para cambiarla.
 - [ ] Crear un paquete nuevo lo deja en estado PENDIENTE.
 - [ ] El paquete aparece en la lista de pendientes.
-- [ ] Marcar "ENTREGADO" pide confirmación y luego el paquete desaparece de la lista de pendientes.
+- [ ] "ENTREGADO" abre un formulario que exige el nombre de quien lo retira antes de dejar
+      confirmar (el apartamento viene precargado con el del paquete, pero se puede cambiar). Al
+      confirmar, el paquete desaparece de la lista de pendientes.
 - [ ] No es posible entregar el mismo paquete dos veces (probar recargando la lista después de entregarlo).
+- [ ] El reporte "Paquetes" en Administración → Reportes muestra el nombre y apartamento de quien
+      retiró cada paquete entregado.
 
 ## Objetos y préstamos
 - [ ] Un objeto creado por administración (con un Lobby asignado) aparece en "Disponibles" SOLO
@@ -85,9 +91,12 @@ antes de escribirle a soporte.
       aparece la franja roja superior.
 - [ ] Al reconectar, el indicador vuelve a 🟢 CONECTADO sin necesidad de recargar la página.
 - [ ] Con el dispositivo sin conexión, registrar un paquete/tarjeta/objeto/entrada de parqueo
-      (Lobby B) muestra el mensaje de éxito igual que en línea. Al reconectar, el registro aparece
-      en la base de datos (revisar en Firebase Console → Firestore, o que otro dispositivo ya
-      conectado lo vea aparecer).
+      (Lobby B) muestra el mensaje de éxito **en pocos segundos** (no se queda en "GUARDANDO..."
+      esperando). Al reconectar, el registro aparece en la base de datos (revisar en Firebase
+      Console → Firestore, o que otro dispositivo ya conectado lo vea aparecer).
+- [ ] Escanear el código QR de un parqueo ocupado desde el celular (con la app principal ya
+      abierta en otra pestaña del mismo dispositivo) y presionar "Registrar salida" desde esa
+      pestaña de consulta guarda sin quedarse colgado.
 
 ## Seguridad (importante — probar antes de usar el sistema con datos reales)
 Estas pruebas confirman que la protección real está en Firebase y no solo en la interfaz.

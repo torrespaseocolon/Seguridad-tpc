@@ -17,6 +17,7 @@ import {
 import { getProfile } from "./auth.service.js";
 import { logAudit } from "./audit.service.js";
 import { elapsedMinutes } from "../utils/time.js";
+import { isOnline } from "../utils/connectivity.js";
 
 // -----------------------------------------------------------------------
 // Reglas de tiempo máximo por tipo de destino (requisito de la Junta
@@ -65,25 +66,21 @@ export function subscribeParkingSpaces(callback, onError) {
 class OperationError extends Error {}
 
 /**
- * Antes registerEntry/registerExit usaban runTransaction + getCountFromServer
- * para blindarse contra dos guardias registrando el mismo espacio (o
- * superando el límite por destino) en el mismo instante. NINGUNA de las dos
- * funciona sin conexión: las transacciones necesitan ida y vuelta al
- * servidor, y getCountFromServer explícitamente nunca usa la caché local.
- * Eso bloqueaba por completo registrar parqueos sin señal.
+ * Antes registerEntry/registerExit usaban runTransaction + getCountFromServer,
+ * y luego (ago-2026) pasaron a getDoc/getDocs comunes. Pero incluso getDoc
+ * "normal" puede quedarse esperando mucho tiempo una respuesta del servidor
+ * cuando la señal se corta de golpe (no offline "prolijo" del navegador,
+ * sino que el router deja de responder) — el guardia veía "GUARDANDO..."
+ * sin que nunca terminara. Por eso ahora NINGUNA lectura de red bloquea
+ * estas dos funciones: usan solo los datos que la propia pantalla ya tiene
+ * en memoria (de su listener en tiempo real o de lo que el guardia acaba de
+ * tocar), y escriben directo con setDoc/updateDoc — esas sí son 100%
+ * offline-seguras (se guardan en el dispositivo y se sincronizan solas).
  *
  * Ago-2026: desde que SOLO el guardia de Lobby B (o un administrador) puede
  * registrar entradas/salidas (ver canOperateParking() en parking.page.js y
- * la restricción de lobby en firestore.rules), ya no existe el escenario que
- * esas protecciones evitaban — normalmente hay una sola persona/dispositivo
- * tocando los parqueos a la vez. Por eso se cambió a lecturas/escrituras
- * simples (getDoc/updateDoc/setDoc en vez de transacción, getDocs en vez de
- * getCountFromServer): sí funcionan sin señal, se guardan en el dispositivo
- * y se sincronizan solas al volver la conexión. Queda un riesgo pequeño y
- * aceptado: si dos sesiones (por ejemplo el guardia de Lobby B Y un
- * administrador) intentaran ocupar el mismo espacio en el mismo instante
- * estando ambos en línea, ya no hay una garantía atómica del servidor que lo
- * impida — un caso raro en la operación real del condominio.
+ * la restricción de lobby en firestore.rules), el riesgo de que dos personas
+ * choquen en el mismo espacio al mismo tiempo es bajo y se acepta.
  */
 export async function registerEntry(spaceNumber, data) {
   const profile = getProfile();
@@ -96,34 +93,32 @@ export async function registerEntry(spaceNumber, data) {
   // sigue usando la hora real del servidor.
   const entryAtValue = data.entryAtOverride instanceof Date ? data.entryAtOverride : serverTimestamp();
 
-  // Límite de parqueos de visita simultáneos por apartamento/oficina. getDocs
-  // (a diferencia de getCountFromServer) sí funciona offline contra la caché
-  // local, así que este chequeo se sigue aplicando aunque no haya señal.
-  const activeSnap = await getDocs(
-    query(
-      collection(db, "parking_sessions"),
-      where("status", "==", "open"),
-      where("destinationType", "==", destinationType),
-      where("destinationNumber", "==", destinationNumber)
-    )
-  );
-  if (activeSnap.size >= MAX_SIMULTANEOUS_PER_DESTINATION) {
-    throw new OperationError(
-      `Ya hay ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita en uso para este ${destinationType === "office" ? "local" : "apartamento"} (máximo permitido). Debe liberarse uno antes de registrar otro.`
+  // Límite de parqueos de visita simultáneos por apartamento/oficina: es una
+  // consulta de red (getDocs), así que solo se hace si hay señal. Sin
+  // conexión se omite el chequeo en vez de arriesgarse a que se quede
+  // esperando — el guardia ya ve la pantalla "SIN CONEXIÓN" y sabe que está
+  // operando con ese riesgo pequeño y aceptado.
+  if (isOnline()) {
+    const activeSnap = await getDocs(
+      query(
+        collection(db, "parking_sessions"),
+        where("status", "==", "open"),
+        where("destinationType", "==", destinationType),
+        where("destinationNumber", "==", destinationNumber)
+      )
     );
+    if (activeSnap.size >= MAX_SIMULTANEOUS_PER_DESTINATION) {
+      throw new OperationError(
+        `Ya hay ${MAX_SIMULTANEOUS_PER_DESTINATION} parqueos de visita en uso para este ${destinationType === "office" ? "local" : "apartamento"} (máximo permitido). Debe liberarse uno antes de registrar otro.`
+      );
+    }
   }
 
+  // No se vuelve a leer el espacio con getDoc: la pantalla de Parqueos solo
+  // deja tocar "Registrar entrada" en un espacio que su propio listener en
+  // tiempo real ya muestra como libre, así que esa validación ya se hizo
+  // sola al pintar la pantalla.
   const spaceRef = doc(db, "parking_spaces", spaceNumber);
-  const spaceSnap = await getDoc(spaceRef);
-  if (!spaceSnap.exists()) throw new OperationError("Ese parqueo no existe.");
-  const space = spaceSnap.data();
-  if (space.status !== "free") {
-    throw new OperationError("Este parqueo ya está ocupado. Elija otro espacio.");
-  }
-  if (space.type === "disabled") {
-    throw new OperationError("Este parqueo está deshabilitado.");
-  }
-
   const sessionRef = doc(collection(db, "parking_sessions"));
 
   await setDoc(sessionRef, {
@@ -187,32 +182,30 @@ export async function registerEntry(spaceNumber, data) {
   return { ok: true, sessionId: sessionRef.id, consultaUrl: buildConsultaUrl(sessionRef.id) };
 }
 
-export async function registerExit(spaceNumber) {
+/**
+ * sessionId y entryAt los recibe de quien llama (la pantalla de Parqueos ya
+ * los tiene del espacio que está mostrando; consulta.js ya los tiene del
+ * documento public_status que está mirando) — así esta función no necesita
+ * leer nada de Firestore antes de escribir, y queda 100% offline-segura. Si
+ * el registro ya estaba cerrado (alguien más ya registró la salida), la
+ * propia regla de seguridad lo rechaza al sincronizar (no antes).
+ */
+export async function registerExit(spaceNumber, sessionId, entryAt) {
   const profile = getProfile();
   const spaceRef = doc(db, "parking_spaces", spaceNumber);
+  const durationMinutes = elapsedMinutes(entryAt);
 
-  const spaceSnap = await getDoc(spaceRef);
-  if (!spaceSnap.exists()) throw new OperationError("Ese parqueo no existe.");
-  const space = spaceSnap.data();
-  if (space.status !== "occupied" || !space.sessionId) {
-    throw new OperationError("Este vehículo ya fue registrado como salida por otro usuario.");
+  if (sessionId) {
+    await updateDoc(doc(db, "parking_sessions", sessionId), {
+      status: "closed",
+      exitAt: serverTimestamp(),
+      exitGuardUid: profile.uid,
+      exitGuardName: profile.name,
+      exitLobby: profile.lobby || null,
+      durationMinutes,
+    });
+    await setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true });
   }
-  const sessionId = space.sessionId;
-  const sessionRef = doc(db, "parking_sessions", sessionId);
-  const sessionSnap = await getDoc(sessionRef);
-  if (!sessionSnap.exists() || sessionSnap.data().status !== "open") {
-    throw new OperationError("Este registro ya fue cerrado.");
-  }
-  const durationMinutes = elapsedMinutes(sessionSnap.data().entryAt);
-
-  await updateDoc(sessionRef, {
-    status: "closed",
-    exitAt: serverTimestamp(),
-    exitGuardUid: profile.uid,
-    exitGuardName: profile.name,
-    exitLobby: profile.lobby || null,
-    durationMinutes,
-  });
 
   await updateDoc(spaceRef, {
     status: "free",
@@ -230,8 +223,6 @@ export async function registerExit(spaceNumber) {
     maxMinutesAtEntry: null,
     updatedAt: serverTimestamp(),
   });
-
-  await setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: serverTimestamp() }, { merge: true });
 
   await logAudit("parking.exit", {
     targetCollection: "parking_sessions",

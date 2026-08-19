@@ -168,7 +168,9 @@ function openLoanModal(obj, reload) {
     el("option", { value: "other" }, "Otro"),
   ]);
   const nameInput = el("input", { class: "form-control", required: true });
-  const destField = createDestinationField({ required: false });
+  const profile = getProfile();
+  const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
+  const destField = createDestinationField({ defaultTower, required: false });
   const notesInput = el("textarea", { class: "form-control", rows: "2" });
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR PRÉSTAMO");
@@ -255,7 +257,7 @@ function openReturnModal(loan, reload) {
     submitBtn.disabled = true;
     submitBtn.textContent = "GUARDANDO...";
     try {
-      await returnObject(loan.id, { returnObservations: notesInput.value.trim(), returnCondition: conditionSelect.value });
+      await returnObject(loan.id, { objectId: loan.objectId, returnObservations: notesInput.value.trim(), returnCondition: conditionSelect.value });
       toast("Devolución registrada.", "success");
       closeFn();
       reload();

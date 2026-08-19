@@ -256,6 +256,32 @@ a { color: inherit; }
 }
 .form-control:focus { outline: none; border-color: var(--color-primary); }
 select.form-control { appearance: none; }
+
+/* Selector visual de Torre (A/B): dos botones grandes en vez de un <select>,
+   para elegir de un solo toque en vez de abrir un desplegable. */
+.tower-toggle { display: flex; gap: var(--space-sm); }
+.tower-toggle__btn {
+  flex: 1;
+  min-height: var(--touch-target-min);
+  padding: 12px 14px;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-bold);
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.05s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.tower-toggle__btn:active { transform: scale(0.98); }
+.tower-toggle__btn--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
 .form-hint { font-size: var(--font-size-sm); color: var(--color-text-faint); margin-top: 4px; }
 .form-error { font-size: var(--font-size-sm); color: var(--color-danger); margin-top: 4px; font-weight: var(--font-weight-bold); }
 .form-actions { display: flex; gap: var(--space-sm); margin-top: var(--space-lg); }

@@ -33,13 +33,18 @@ registrar nada ahí.
 
 ## Registrar un paquete
 1. Presiona **📦 Paquetes → + NUEVO PAQUETE**.
-2. Completa apartamento, nombre del destinatario, empresa de mensajería (y guía/observaciones si
-   aplica).
+2. La Torre ya viene marcada según tu lobby (Lobby A → Torre A, Lobby B → Torre B) — tocá el otro
+   botón si el paquete es para la otra torre. Completa el piso + unidad, nombre del destinatario,
+   empresa de mensajería (y guía/observaciones si aplica).
 3. Presiona **REGISTRAR PAQUETE**. Queda como PENDIENTE hasta que alguien lo retire.
 
 ## Entregar un paquete
 1. Presiona **📦 Paquetes**, busca la tarjeta correspondiente en la lista de pendientes.
-2. Presiona **ENTREGADO** y confirma.
+2. Presiona **ENTREGADO**. Escribe el nombre de quien lo retira (puede no ser la misma persona a
+   nombre de quien llegó — un familiar, empleada doméstica, etc.) y su apartamento/oficina — queda
+   guardado como bitácora, así que si después hay un reclamo de que se entregó mal, administración
+   puede revisar quién lo retiró y cuándo.
+3. Presiona **CONFIRMAR ENTREGA**.
 
 ## Registrar un préstamo
 Cada objeto pertenece al inventario de un solo lobby: en "Disponibles" solo vas a ver (y podés

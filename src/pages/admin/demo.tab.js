@@ -171,8 +171,9 @@ async function seedDemoData(log) {
     query(collection(db, "parking_spaces"), where("isDemo", "==", true), where("status", "==", "occupied"))
   );
   for (const d of leftoverSnap.docs) {
+    const s = d.data();
     try {
-      await registerExit(d.data().number);
+      await registerExit(s.number, s.sessionId, s.entryAt);
     } catch (err) {
       /* si ya se liberó por otro lado, no pasa nada */
     }
@@ -288,7 +289,7 @@ async function clearDemoData(log) {
   for (const d of spacesSnap.docs) {
     const space = d.data();
     try {
-      await registerExit(space.number);
+      await registerExit(space.number, space.sessionId, space.entryAt);
       log(`Parqueo ${space.number}: salida registrada.`);
     } catch (err) {
       log(`Parqueo ${space.number}: ${friendlyError(err)}`, false);

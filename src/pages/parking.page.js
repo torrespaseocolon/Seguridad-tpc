@@ -282,7 +282,7 @@ function openExitModal(space) {
       confirmBtn.disabled = true;
       confirmBtn.textContent = "GUARDANDO...";
       try {
-        await registerExit(space.number);
+        await registerExit(space.number, space.sessionId, space.entryAt);
         toast(`Salida registrada. Parqueo ${space.number} liberado.`, "success");
         tickerStop();
         originalClose();

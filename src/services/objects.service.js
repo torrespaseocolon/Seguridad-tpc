@@ -3,10 +3,10 @@ import {
   collection,
   doc,
   addDoc,
-  getDoc,
   setDoc,
   updateDoc,
   deleteDoc,
+  increment,
   serverTimestamp,
   query,
   where,
@@ -78,29 +78,23 @@ export async function deleteObject(id, name) {
 }
 
 /**
- * Antes usaba runTransaction para bajar availableQuantity de forma segura
- * (evitar que dos guardias presten la última unidad al mismo tiempo). Las
- * transacciones de Firestore NO se pueden ejecutar sin conexión — necesitan
- * ida y vuelta al servidor — así que bloqueaban por completo el préstamo de
- * objetos offline. Ahora que cada objeto pertenece a un solo lobby y solo el
- * guardia de ESE lobby lo presta (ver fetchActiveObjects), el riesgo real de
- * un choque es mínimo: se acepta ese riesgo pequeño (corregible a mano por
- * un admin revisando availableQuantity) a cambio de poder prestar objetos
- * sin señal — igual que ya funciona Paquetes y Tarjetas.
+ * Antes usaba runTransaction, y luego (ago-2026) pasó a leer el objeto con
+ * getDoc antes de prestar. Pero getDoc puede quedarse esperando mucho tiempo
+ * una respuesta si la señal se corta de golpe (no offline "prolijo"), y eso
+ * dejaba el botón "GUARDANDO..." colgado sin terminar nunca. Ahora no se lee
+ * nada: se usa increment(-1), un contador atómico de Firestore que no
+ * necesita saber el valor actual para aplicarse (funciona igual online y
+ * offline, se sincroniza solo). Se confía en que la pantalla de Objetos solo
+ * deja tocar "PRESTAR" en algo que ya se veía disponible al cargar la lista.
+ * Cada objeto pertenece a un solo lobby y solo el guardia de ESE lobby lo
+ * presta (ver fetchActiveObjects), así que el riesgo de choque es mínimo —
+ * corregible a mano por un admin revisando availableQuantity si llegara a
+ * pasar.
  */
 export async function loanObject({ objectId, objectName, borrowerType, borrowerName, apartment, notes, isDemo = false }) {
   const profile = getProfile();
   const objectRef = doc(db, "objects", objectId);
   const loanRef = doc(collection(db, "object_loans"));
-
-  const objSnap = await getDoc(objectRef);
-  if (!objSnap.exists() || objSnap.data().active !== true) {
-    throw new OperationError("Este objeto ya no está disponible.");
-  }
-  const available = objSnap.data().availableQuantity;
-  if (available <= 0) {
-    throw new OperationError("No hay unidades disponibles de este objeto en este momento.");
-  }
 
   await setDoc(loanRef, {
     objectId,
@@ -121,7 +115,7 @@ export async function loanObject({ objectId, objectName, borrowerType, borrowerN
     returnObservations: "",
     returnCondition: "",
   });
-  await updateDoc(objectRef, { availableQuantity: available - 1 });
+  await updateDoc(objectRef, { availableQuantity: increment(-1) });
 
   await logAudit("object.loan", { targetCollection: "object_loans", targetId: loanRef.id, details: { objectId, borrowerName } });
   return loanRef.id;
@@ -133,16 +127,17 @@ export async function fetchActiveLoans() {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
-export async function returnObject(loanId, { returnObservations, returnCondition }) {
+/**
+ * objectId lo recibe de quien llama (la tarjeta del préstamo, que ya tiene
+ * todos sus campos en pantalla) — así tampoco hace falta leer el préstamo
+ * de Firestore antes de devolver. Ya no se limita availableQuantity contra
+ * totalQuantity (ese tope necesitaba leer el objeto primero); si algún día
+ * quedara por encima del total por un caso raro, se corrige a mano.
+ */
+export async function returnObject(loanId, { objectId, returnObservations, returnCondition }) {
   const profile = getProfile();
-  const loanRef = doc(db, "object_loans", loanId);
 
-  const loanSnap = await getDoc(loanRef);
-  if (!loanSnap.exists() || loanSnap.data().status !== "loaned") {
-    throw new OperationError("Este préstamo ya fue devuelto.");
-  }
-
-  await updateDoc(loanRef, {
+  await updateDoc(doc(db, "object_loans", loanId), {
     status: "returned",
     returnedAt: serverTimestamp(),
     returnedByUid: profile.uid,
@@ -151,12 +146,8 @@ export async function returnObject(loanId, { returnObservations, returnCondition
     returnCondition: returnCondition || "bueno",
   });
 
-  const objectRef = doc(db, "objects", loanSnap.data().objectId);
-  const objSnap = await getDoc(objectRef);
-  if (objSnap.exists()) {
-    const available = objSnap.data().availableQuantity;
-    const total = objSnap.data().totalQuantity;
-    await updateDoc(objectRef, { availableQuantity: Math.min(available + 1, total) });
+  if (objectId) {
+    await updateDoc(doc(db, "objects", objectId), { availableQuantity: increment(1) });
   }
 
   await logAudit("object.return", { targetCollection: "object_loans", targetId: loanId, details: { returnCondition } });

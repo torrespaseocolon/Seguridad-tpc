@@ -15,6 +15,45 @@ import {
 } from "./destination.js";
 
 /**
+ * Selector visual de torre: dos botones grandes ("Torre A" / "Torre B") en
+ * vez de un <select> — un solo toque en vez de abrir un desplegable. Se
+ * comporta como un campo de formulario normal (expone `.value` y dispara un
+ * evento "change" al tocar un botón) para que el resto del código (que ya
+ * usaba `towerSelect.value` y `towerSelect.addEventListener("change", ...)`
+ * con el <select> anterior) no tenga que cambiar.
+ */
+function createTowerToggle(initialValue) {
+  let currentValue = initialValue;
+  const btnA = el("button", { type: "button", class: "tower-toggle__btn" }, "Torre A");
+  const btnB = el("button", { type: "button", class: "tower-toggle__btn" }, "Torre B");
+  const container = el("div", { class: "tower-toggle" }, [btnA, btnB]);
+
+  function refreshActive() {
+    btnA.classList.toggle("tower-toggle__btn--active", currentValue === "A");
+    btnB.classList.toggle("tower-toggle__btn--active", currentValue === "B");
+  }
+
+  Object.defineProperty(container, "value", {
+    get: () => currentValue,
+    set: (v) => {
+      currentValue = v;
+      refreshActive();
+    },
+  });
+
+  function select(v) {
+    if (currentValue === v) return;
+    container.value = v;
+    container.dispatchEvent(new Event("change"));
+  }
+  btnA.addEventListener("click", () => select("A"));
+  btnB.addEventListener("click", () => select("B"));
+
+  refreshActive();
+  return container;
+}
+
+/**
  * @param {Object} opts
  * @param {"A"|"B"} [opts.defaultTower]
  * @param {boolean} [opts.required] — si el campo es obligatorio.
@@ -25,10 +64,7 @@ export function createDestinationField({ defaultTower = "A", required = true, in
   const parsedInitial = initialValue ? parseDestinationCode(initialValue) : null;
   const initialTower = parsedInitial && parsedInitial.tower ? parsedInitial.tower : defaultTower;
 
-  const towerSelect = el("select", { class: "form-control" }, [
-    el("option", { value: "A", selected: initialTower === "A" }, "Torre A"),
-    el("option", { value: "B", selected: initialTower === "B" }, "Torre B"),
-  ]);
+  const towerSelect = createTowerToggle(initialTower);
   const numberInput = el("input", {
     class: "form-control",
     required,

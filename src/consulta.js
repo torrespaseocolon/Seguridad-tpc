@@ -145,7 +145,7 @@ function renderStatus(data) {
         exitBtn.disabled = true;
         exitBtn.textContent = "GUARDANDO...";
         try {
-          await registerExit(data.spaceNumber);
+          await registerExit(data.spaceNumber, id, data.entryAt);
           toast("Salida registrada.", "success");
           // La propia consulta se actualiza sola (escucha en tiempo real).
         } catch (err) {
