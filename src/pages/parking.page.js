@@ -128,38 +128,45 @@ export function renderParking(root) {
 
 /**
  * Espacio 01 — Motos: un solo espacio físico donde caben varias motos a la
- * vez (ver MOTO_SPACE_CAPACITY), cada una con su propio tiempo. Muestra una
- * fila por moto parqueada (con su cronómetro y botón de salida individual) y
- * una fila "LIBRE" por cada cupo disponible para registrar una moto más —
- * el documento del espacio en sí nunca cambia, lo que está ocupado se ve en
- * vivo con subscribeMotoSessions (ver nota en parking.service.js).
+ * vez (ver MOTO_SPACE_CAPACITY), cada una con su propio tiempo. En la
+ * cuadrícula se ve como una tarjeta compacta más (mismo tamaño que un
+ * espacio normal, para no verse fuera de lugar en pantallas chicas) con la
+ * cantidad ocupada; al tocarla se abre un modal con el detalle: una fila
+ * por moto parqueada (con su cronómetro y botón de salida individual) y una
+ * fila "LIBRE" por cada cupo disponible. El documento del espacio en sí
+ * nunca cambia — lo que está ocupado se ve en vivo con subscribeMotoSessions
+ * (ver nota en parking.service.js).
  */
 function renderMotoSpaceCard(space) {
   const capacity = space.capacity || MOTO_SPACE_CAPACITY;
-  const card = el("div", { class: "card moto-space-card", style: "grid-column:1 / -1;" });
-  const countLabel = el("span", { class: "text-secondary" }, "");
-  const list = el("div", { class: "stack", style: "margin-top:10px;" });
-
-  card.appendChild(
-    el("div", { class: "row row--between" }, [
-      el("strong", {}, `PARQUEO ${space.number} — MOTOS`),
-      countLabel,
-    ])
-  );
-  card.appendChild(list);
-
   let motoSessions = [];
   const notifiedSessions = new Set();
+  let onListChange = null; // se activa mientras el modal de detalle está abierto, para refrescarlo en vivo
 
-  function render() {
-    countLabel.textContent = `${motoSessions.length}/${capacity} ocupadas`;
-    clear(list);
-    for (const session of motoSessions) list.appendChild(renderMotoSlot(space, session));
-    const emptySlots = Math.max(0, capacity - motoSessions.length);
-    for (let i = 0; i < emptySlots; i++) list.appendChild(renderEmptyMotoSlot(space));
+  const statusBadge = el("span", { class: "badge badge--free" }, [el("span", { class: "status-dot" }), "LIBRE"]);
+  const tile = el(
+    "div",
+    { class: "space-card space-card--free", id: `space-${space.number}`, onclick: () => openMotoListModal() },
+    [el("div", { class: "space-card__number" }, `PARQUEO ${space.number}`), statusBadge]
+  );
+
+  function refreshTile() {
+    const occupied = motoSessions.length;
+    const anyOverdue = motoSessions.some((s) => s.maxMinutesAtEntry && elapsedMinutes(s.entryAt) > s.maxMinutesAtEntry);
+    clear(statusBadge);
+    if (occupied === 0) {
+      tile.className = "space-card space-card--free";
+      statusBadge.className = "badge badge--free";
+      statusBadge.append(el("span", { class: "status-dot" }), "LIBRE");
+    } else {
+      tile.className = "space-card space-card--occupied";
+      statusBadge.className = "badge badge--occupied";
+      statusBadge.append(el("span", { class: "status-dot" }), `${occupied}/${capacity} OCUPADAS`);
+    }
+    tile.classList.toggle("space-card--overdue", !!anyOverdue);
   }
 
-  function updateMotoTimers() {
+  function checkNotifications() {
     const liveIds = new Set(motoSessions.map((s) => s.id));
     for (const id of notifiedSessions) {
       if (!liveIds.has(id)) notifiedSessions.delete(id);
@@ -167,7 +174,6 @@ function renderMotoSpaceCard(space) {
     for (const session of motoSessions) {
       const mins = elapsedMinutes(session.entryAt);
       const overdue = session.maxMinutesAtEntry && mins > session.maxMinutesAtEntry;
-
       if (overdue && !notifiedSessions.has(session.id)) {
         notifiedSessions.add(session.id);
         notify(`Parqueo ${space.number} (moto) — tiempo vencido`, {
@@ -177,10 +183,37 @@ function renderMotoSpaceCard(space) {
       } else if (!overdue) {
         notifiedSessions.delete(session.id);
       }
+    }
+  }
 
+  function openMotoListModal() {
+    const list = el("div", { class: "stack" });
+    const content = el("div", { class: "stack" }, [
+      el("div", { class: "modal__title" }, `Parqueo ${space.number} — Motos`),
+      list,
+    ]);
+
+    function renderList() {
+      clear(list);
+      for (const session of motoSessions) list.appendChild(renderMotoSlot(space, session));
+      const emptySlots = Math.max(0, capacity - motoSessions.length);
+      for (let i = 0; i < emptySlots; i++) list.appendChild(renderEmptyMotoSlot(space));
+    }
+
+    renderList();
+    openModal(content, { onClose: () => { onListChange = null; } });
+    onListChange = renderList;
+  }
+
+  function updateMotoTimers() {
+    checkNotifications();
+    refreshTile();
+    for (const session of motoSessions) {
       const timerEl = document.getElementById(`moto-timer-${session.id}`);
       const rowEl = document.getElementById(`moto-row-${session.id}`);
       if (!timerEl || !rowEl) continue;
+      const mins = elapsedMinutes(session.entryAt);
+      const overdue = session.maxMinutesAtEntry && mins > session.maxMinutesAtEntry;
       timerEl.textContent = formatElapsed(session.entryAt);
       timerEl.classList.toggle("timer--overdue", !!overdue);
       rowEl.classList.toggle("space-card--overdue", !!overdue);
@@ -189,12 +222,13 @@ function renderMotoSpaceCard(space) {
 
   const unsub = subscribeMotoSessions(space.number, (sessions) => {
     motoSessions = sessions;
-    render();
+    refreshTile();
+    if (onListChange) onListChange();
   });
   const stopTicker = startLocalTicker(updateMotoTimers);
 
   return {
-    el: card,
+    el: tile,
     cleanup: () => {
       unsub();
       stopTicker();

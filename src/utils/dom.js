@@ -75,7 +75,7 @@ export function confirmDialog({ title, body, confirmText = "Confirmar", cancelTe
  * que sea obvio cómo salir sin completar el formulario por si se abrió por
  * error. Devuelve una función para cerrarlo.
  */
-export function openModal(contentNode) {
+export function openModal(contentNode, { onClose } = {}) {
   const backdrop = el("div", { class: "modal-backdrop" });
   const closeBtn = el(
     "button",
@@ -84,7 +84,13 @@ export function openModal(contentNode) {
   );
   const modal = el("div", { class: "modal" }, [closeBtn, contentNode]);
   backdrop.appendChild(modal);
-  const closeFn = () => backdrop.remove();
+  let closed = false;
+  const closeFn = () => {
+    if (closed) return;
+    closed = true;
+    backdrop.remove();
+    if (onClose) onClose();
+  };
   closeBtn.addEventListener("click", closeFn);
   backdrop.addEventListener("click", (e) => {
     if (e.target === backdrop) closeFn();
