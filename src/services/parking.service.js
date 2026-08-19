@@ -282,6 +282,132 @@ export async function registerExit(spaceNumber, sessionId, entryAt) {
   return { ok: true };
 }
 
+// -----------------------------------------------------------------------
+// Parqueo de motos: espacio 01, un solo espacio FÍSICO donde caben varias
+// motos a la vez (hasta MOTO_SPACE_CAPACITY), cada una con su propio tiempo.
+// A diferencia de un espacio normal (1 ocupante = los campos del propio
+// documento parking_spaces/{numero}), acá el documento del espacio nunca se
+// toca al entrar/salir una moto — cada moto es su propio registro en
+// parking_sessions (igual que un carro), y lo que está "ocupado ahora" se ve
+// en vivo simplemente contando cuántos de esos registros siguen abiertos
+// para ese número de espacio (subscribeMotoSessions). Así varias motos
+// pueden entrar y salir de forma independiente sin pisarse entre ellas.
+// -----------------------------------------------------------------------
+export const MOTO_SPACE_CAPACITY = 9;
+
+/** Escucha en tiempo real las motos actualmente parqueadas (registros abiertos) en un espacio de motos. */
+export function subscribeMotoSessions(spaceNumber, callback) {
+  const q = query(
+    collection(db, "parking_sessions"),
+    where("status", "==", "open"),
+    where("spaceNumber", "==", spaceNumber)
+  );
+  return onSnapshot(
+    q,
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }))),
+    (err) => console.error("[SEGURIDAD TPC] Error escuchando motos:", err)
+  );
+}
+
+/** Igual que registerEntry, pero sin tocar parking_spaces (ver nota arriba) — la pantalla ya valida el cupo con subscribeMotoSessions antes de mostrar el botón. */
+export async function registerMotoEntry(spaceNumber, data) {
+  const profile = getProfile();
+  const destinationType = data.destinationType;
+  const destinationNumber = data.destinationNumber.trim();
+  const maxMinutes = maxMinutesForDestination(destinationType);
+  const entryAtValue = data.entryAtOverride instanceof Date ? data.entryAtOverride : new Date();
+
+  if (isOnline()) {
+    const activeSnap = await settle(
+      getDocs(
+        query(
+          collection(db, "parking_sessions"),
+          where("status", "==", "open"),
+          where("destinationType", "==", destinationType),
+          where("destinationNumber", "==", destinationNumber)
+        )
+      )
+    );
+    const maxSimultaneous = getTimeRules().maxSimultaneousPerDestination;
+    if (activeSnap && activeSnap.size >= maxSimultaneous) {
+      throw new OperationError(
+        `Ya hay ${maxSimultaneous} parqueos de visita en uso para este ${destinationType === "office" ? "local" : "apartamento"} (máximo permitido). Debe liberarse uno antes de registrar otro.`
+      );
+    }
+  }
+
+  const sessionRef = doc(collection(db, "parking_sessions"));
+  await settle(
+    Promise.all([
+      setDoc(sessionRef, {
+        spaceNumber,
+        vehicleKind: "moto",
+        status: "open",
+        visitorName: data.visitorName,
+        visitorId: data.visitorId,
+        plate: data.plate,
+        visitorPhone: data.visitorPhone || "",
+        isDemo: !!data.isDemo,
+        destinationType,
+        destinationNumber,
+        entryAt: entryAtValue,
+        entryGuardUid: profile.uid,
+        entryGuardName: profile.name,
+        entryLobby: profile.lobby || data.lobbyOverride || null,
+        exitAt: null,
+        exitGuardUid: null,
+        exitGuardName: null,
+        exitLobby: null,
+        durationMinutes: null,
+        maxMinutesAtEntry: maxMinutes,
+        corrected: false,
+        correctionNote: "",
+      }),
+      setDoc(doc(db, "public_status", sessionRef.id), {
+        spaceNumber,
+        destinationType,
+        entryAt: entryAtValue,
+        maxMinutesAtEntry: maxMinutes,
+        extendedMinutes: 0,
+        status: "open",
+        exitAt: null,
+      }),
+    ])
+  );
+
+  logAudit("parking.moto_entry", {
+    targetCollection: "parking_sessions",
+    targetId: sessionRef.id,
+    details: { spaceNumber, plate: data.plate },
+  });
+
+  return { ok: true, sessionId: sessionRef.id, consultaUrl: buildConsultaUrl(sessionRef.id) };
+}
+
+/** Igual que registerExit, pero sin tocar parking_spaces (esa moto nunca fue dueña única del documento del espacio). */
+export async function registerMotoExit(sessionId, entryAt) {
+  const profile = getProfile();
+  const durationMinutes = elapsedMinutes(entryAt);
+  const exitAtValue = new Date();
+
+  await settle(
+    Promise.all([
+      updateDoc(doc(db, "parking_sessions", sessionId), {
+        status: "closed",
+        exitAt: exitAtValue,
+        exitGuardUid: profile.uid,
+        exitGuardName: profile.name,
+        exitLobby: profile.lobby || null,
+        durationMinutes,
+      }),
+      setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: exitAtValue }, { merge: true }),
+    ])
+  );
+
+  logAudit("parking.moto_exit", { targetCollection: "parking_sessions", targetId: sessionId, details: { durationMinutes } });
+  return { ok: true };
+}
+
 /** Solo administración: libera un espacio manualmente (corrección de un error operativo). */
 export async function forceReleaseSpace(spaceNumber, note) {
   const spaceRef = doc(db, "parking_spaces", spaceNumber);

@@ -89,7 +89,7 @@ export async function renderParkingConfigTab(root) {
     ])
   );
 
-  const addNumberInput = el("input", { class: "form-control", placeholder: "Ej. 01-2" });
+  const addNumberInput = el("input", { class: "form-control", placeholder: "Ej. 14" });
   const addTypeSelect = el("select", { class: "form-control" }, TYPE_OPTIONS.map((opt) => el("option", { value: opt.value }, opt.label)));
   const addBtn = el("button", { class: "btn btn--primary" }, [icon("plus", { size: 16 }), " Agregar"]);
   addBtn.addEventListener("click", async () => {
@@ -113,7 +113,16 @@ export async function renderParkingConfigTab(root) {
         el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Tipo"), addTypeSelect]),
         addBtn,
       ]),
-      el("div", { class: "form-hint mt-md" }, "Por ejemplo, para las motos: cambie el tipo del parqueo 01 a \"Moto\" abajo y agregue 8 espacios más aquí (01-2, 01-3... 01-9) también de tipo \"Moto\", así quedan 9 espacios de moto cada uno con su propio tiempo."),
+      el("div", { class: "form-hint mt-md" }, "Para un parqueo nuevo que reciba autos normales. El espacio de motos (parqueo 01) ya está listo aparte, más abajo — no hace falta agregarlo aquí."),
+    ])
+  );
+
+  root.appendChild(
+    el("div", { class: "card mb-md" }, [
+      el("div", { class: "card__title row" }, [icon("info"), "Espacio de motos"]),
+      el("div", { class: "text-secondary" },
+        "El parqueo 01 puede recibir hasta 9 motos a la vez en el mismo espacio físico, cada una con su propio cronómetro y su propia salida — no son 9 parqueos separados, es un solo espacio compartido. Para activarlo, busque el parqueo \"01\" en la lista de abajo, cámbiele el tipo a \"Moto\" y toque Guardar. En la pantalla de Parqueos va a aparecer como una tarjeta grande con una fila por moto."
+      ),
     ])
   );
 

@@ -1,6 +1,16 @@
 import { el, clear, toast, confirmDialog, openModal } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
-import { subscribeParkingSpaces, registerEntry, registerExit, buildConsultaUrl, OperationError } from "../services/parking.service.js";
+import {
+  subscribeParkingSpaces,
+  registerEntry,
+  registerExit,
+  subscribeMotoSessions,
+  registerMotoEntry,
+  registerMotoExit,
+  MOTO_SPACE_CAPACITY,
+  buildConsultaUrl,
+  OperationError,
+} from "../services/parking.service.js";
 import { getTimeRules } from "../services/settings.service.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { qrImageUrl } from "../utils/qr.js";
@@ -27,7 +37,6 @@ const TYPE_BADGE = {
   visitor: null,
   disability: { icon: "wheelchair", text: "DISCAPACIDAD", cls: "badge--disability" },
   disabled: { icon: null, text: "FUERA DE SERVICIO", cls: "badge--disabled" },
-  moto: { icon: null, text: "MOTO", cls: "badge--info" },
 };
 
 export function renderParking(root) {
@@ -47,15 +56,37 @@ export function renderParking(root) {
 
   let spaces = [];
   const notifiedSpaces = new Set();
+  // Los espacios de moto (varias motos independientes en UN solo espacio
+  // físico) se renderizan con su propio widget persistente, que trae su
+  // propia suscripción en tiempo real a las motos parqueadas — no se
+  // recrean en cada renderGrid() para no reiniciar esa suscripción cada vez
+  // que cambia OTRO espacio normal del grid (ver renderMotoSpaceCard).
+  const motoWidgets = new Map();
 
   function renderGrid() {
+    const motoSpaces = spaces.filter((s) => s.type === "moto");
+    const normalSpaces = spaces.filter((s) => s.type !== "moto");
+
     clear(grid);
-    for (const space of spaces) grid.appendChild(renderSpaceCard(space));
+    for (const space of motoSpaces) {
+      if (!motoWidgets.has(space.number)) {
+        motoWidgets.set(space.number, renderMotoSpaceCard(space));
+      }
+      grid.appendChild(motoWidgets.get(space.number).el);
+    }
+    for (const space of normalSpaces) grid.appendChild(renderSpaceCard(space));
+
+    for (const [number, widget] of motoWidgets) {
+      if (!motoSpaces.some((s) => s.number === number)) {
+        widget.cleanup();
+        motoWidgets.delete(number);
+      }
+    }
   }
 
   function updateTimers() {
     for (const space of spaces) {
-      if (space.status !== "occupied") continue;
+      if (space.type === "moto" || space.status !== "occupied") continue;
       const timerEl = document.getElementById(`timer-${space.number}`);
       const cardEl = document.getElementById(`space-${space.number}`);
       const mins = elapsedMinutes(space.entryAt);
@@ -91,7 +122,126 @@ export function renderParking(root) {
   return () => {
     unsub();
     stopTicker();
+    for (const widget of motoWidgets.values()) widget.cleanup();
   };
+}
+
+/**
+ * Espacio 01 — Motos: un solo espacio físico donde caben varias motos a la
+ * vez (ver MOTO_SPACE_CAPACITY), cada una con su propio tiempo. Muestra una
+ * fila por moto parqueada (con su cronómetro y botón de salida individual) y
+ * una fila "LIBRE" por cada cupo disponible para registrar una moto más —
+ * el documento del espacio en sí nunca cambia, lo que está ocupado se ve en
+ * vivo con subscribeMotoSessions (ver nota en parking.service.js).
+ */
+function renderMotoSpaceCard(space) {
+  const capacity = space.capacity || MOTO_SPACE_CAPACITY;
+  const card = el("div", { class: "card moto-space-card", style: "grid-column:1 / -1;" });
+  const countLabel = el("span", { class: "text-secondary" }, "");
+  const list = el("div", { class: "stack", style: "margin-top:10px;" });
+
+  card.appendChild(
+    el("div", { class: "row row--between" }, [
+      el("strong", {}, `PARQUEO ${space.number} — MOTOS`),
+      countLabel,
+    ])
+  );
+  card.appendChild(list);
+
+  let motoSessions = [];
+  const notifiedSessions = new Set();
+
+  function render() {
+    countLabel.textContent = `${motoSessions.length}/${capacity} ocupadas`;
+    clear(list);
+    for (const session of motoSessions) list.appendChild(renderMotoSlot(space, session));
+    const emptySlots = Math.max(0, capacity - motoSessions.length);
+    for (let i = 0; i < emptySlots; i++) list.appendChild(renderEmptyMotoSlot(space));
+  }
+
+  function updateMotoTimers() {
+    const liveIds = new Set(motoSessions.map((s) => s.id));
+    for (const id of notifiedSessions) {
+      if (!liveIds.has(id)) notifiedSessions.delete(id);
+    }
+    for (const session of motoSessions) {
+      const mins = elapsedMinutes(session.entryAt);
+      const overdue = session.maxMinutesAtEntry && mins > session.maxMinutesAtEntry;
+
+      if (overdue && !notifiedSessions.has(session.id)) {
+        notifiedSessions.add(session.id);
+        notify(`Parqueo ${space.number} (moto) — tiempo vencido`, {
+          body: `${session.visitorName || "La moto"} (${session.plate || "sin placa"}) ya superó el tiempo permitido.`,
+          tag: `parking-overdue-moto-${session.id}`,
+        });
+      } else if (!overdue) {
+        notifiedSessions.delete(session.id);
+      }
+
+      const timerEl = document.getElementById(`moto-timer-${session.id}`);
+      const rowEl = document.getElementById(`moto-row-${session.id}`);
+      if (!timerEl || !rowEl) continue;
+      timerEl.textContent = formatElapsed(session.entryAt);
+      timerEl.classList.toggle("timer--overdue", !!overdue);
+      rowEl.classList.toggle("space-card--overdue", !!overdue);
+    }
+  }
+
+  const unsub = subscribeMotoSessions(space.number, (sessions) => {
+    motoSessions = sessions;
+    render();
+  });
+  const stopTicker = startLocalTicker(updateMotoTimers);
+
+  return {
+    el: card,
+    cleanup: () => {
+      unsub();
+      stopTicker();
+    },
+  };
+}
+
+function renderMotoSlot(space, session) {
+  const canOperate = canOperateParking(getProfile());
+  return el(
+    "div",
+    {
+      class: "card row row--between",
+      id: `moto-row-${session.id}`,
+      style: "cursor:pointer; flex-wrap:wrap; gap:8px;",
+      onclick: () => openMotoExitModal(space, session),
+    },
+    [
+      el("div", {}, [
+        el("div", { style: "font-weight:700;" }, session.visitorName || ""),
+        el("div", { class: "text-secondary" }, `${session.plate || ""} · Apt. ${session.destinationNumber || ""}`),
+      ]),
+      el("div", { class: "row", style: "gap:10px; align-items:center;" }, [
+        canOperate ? null : el("span", { class: "badge badge--info" }, "CONSULTA"),
+        el("div", { class: "timer mono", id: `moto-timer-${session.id}` }, formatElapsed(session.entryAt)),
+      ].filter(Boolean)),
+    ]
+  );
+}
+
+function renderEmptyMotoSlot(space) {
+  const canOperate = canOperateParking(getProfile());
+  return el(
+    "div",
+    {
+      class: "card row",
+      style: "cursor:pointer;",
+      onclick: () => {
+        if (!canOperate) {
+          toast("Solo el guardia de Lobby B (o un administrador) puede registrar entradas de parqueo.", "info");
+          return;
+        }
+        openMotoEntryModal(space);
+      },
+    },
+    [el("span", { class: "badge badge--free" }, [el("span", { class: "status-dot" }), "LIBRE — Registrar moto"])]
+  );
 }
 
 function renderSpaceCard(space) {
@@ -289,6 +439,161 @@ function openExitModal(space) {
         toast(`Salida registrada. Parqueo ${space.number} liberado.`, "success");
         tickerStop();
         originalClose();
+      } catch (err) {
+        errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la salida. Intente nuevamente.";
+        errorBox.style.display = "block";
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "REGISTRAR SALIDA";
+      }
+    });
+  }
+}
+
+function openMotoEntryModal(space) {
+  const profile = getProfile();
+  const nameInput = el("input", { class: "form-control", required: true });
+  const idInput = el("input", { class: "form-control", required: true });
+  const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
+  const phoneInput = el("input", { class: "form-control", type: "tel", placeholder: "Ej. 8888 8888" });
+
+  const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
+  const destField = createDestinationField({ defaultTower, required: true });
+
+  const rules = getTimeRules();
+  const limitHint = el(
+    "div",
+    { class: "form-hint" },
+    `El sistema detecta automáticamente si es apartamento u oficina/comercio según la torre y el piso, y aplica el límite correspondiente: apartamentos hasta ${rules.maxMinutesApartment / 60} horas, oficinas/comercios hasta ${rules.maxMinutesOffice / 60} horas. Máximo ${rules.maxSimultaneousPerDestination} parqueos de visita simultáneos por apartamento/oficina.`
+  );
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR ENTRADA");
+
+  const form = el(
+    "form",
+    {
+      class: "stack",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        errorBox.style.display = "none";
+        const destResult = destField.getResult();
+        if (!destResult.ok) {
+          errorBox.textContent = destResult.error;
+          errorBox.style.display = "block";
+          return;
+        }
+        if (!destResult.type) {
+          errorBox.textContent = "No se pudo determinar automáticamente si es apartamento u oficina/comercio para ese piso (los pisos 2 a 7 de la Torre B son de parqueo interno, sin unidades). Verifique el número.";
+          errorBox.style.display = "block";
+          return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = "GUARDANDO...";
+        try {
+          const result = await registerMotoEntry(space.number, {
+            visitorName: nameInput.value.trim(),
+            visitorId: idInput.value.trim(),
+            plate: plateInput.value.trim().toUpperCase(),
+            visitorPhone: phoneInput.value.trim(),
+            destinationType: destResult.type,
+            destinationNumber: destResult.code,
+            lobbyOverride: "B",
+          });
+          toast(`Entrada de moto registrada en el parqueo ${space.number}.`, "success");
+          showConsultaQr(`${space.number} (moto)`, result.consultaUrl, closeFn);
+        } catch (err) {
+          errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la entrada. Intente nuevamente.";
+          errorBox.style.display = "block";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "REGISTRAR ENTRADA";
+        }
+      },
+    },
+    [
+      el("div", { class: "modal__title" }, `Registrar entrada de moto — Parqueo ${space.number}`),
+      field("Nombre", nameInput),
+      field("Cédula", idInput),
+      field("Placa", plateInput),
+      field("Teléfono (opcional, para avisarle por WhatsApp)", phoneInput),
+      field("Torre", destField.towerSelect),
+      field("Número de piso + unidad", destField.numberInput),
+      destField.hint,
+      limitHint,
+      errorBox,
+      submitBtn,
+    ].filter(Boolean)
+  );
+
+  const closeFn = openModal(form);
+  nameInput.focus();
+}
+
+function openMotoExitModal(space, session) {
+  const profile = getProfile();
+  const canOperate = canOperateParking(profile);
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const timerEl = el("div", { class: "timer mono", id: "exit-modal-timer" }, formatElapsed(session.entryAt));
+  const confirmBtn = canOperate ? el("button", { class: "btn btn--danger btn--block btn--lg" }, "REGISTRAR SALIDA") : null;
+  const readOnlyNote = canOperate
+    ? null
+    : el("div", { class: "form-hint text-center" }, "Solo el guardia de Lobby B (o un administrador) puede registrar la salida. Puede avisarle al visitante por WhatsApp o mostrarle el QR mientras tanto.");
+  const qrBtn = el("button", { class: "btn btn--secondary btn--block" }, [icon("card", { size: 18 }), " Ver código QR de consulta"]);
+  qrBtn.addEventListener("click", () => showConsultaQr(`${space.number} (moto)`, buildConsultaUrl(session.id), null));
+
+  let whatsappBtn = null;
+  if (session.visitorPhone) {
+    const link = whatsappLink(
+      session.visitorPhone,
+      `Hola${session.visitorName ? " " + session.visitorName : ""}, le escribimos de seguridad Torres Paseo Colón: su tiempo de parqueo de moto en el espacio ${space.number} está por vencer (o ya venció). Si necesita más tiempo, avísenos y con gusto se lo extendemos.`
+    );
+    if (link) {
+      whatsappBtn = el(
+        "a",
+        { href: link, target: "_blank", rel: "noopener", class: "btn btn--success btn--block" },
+        [icon("whatsapp", { size: 18 }), " Avisar por WhatsApp"]
+      );
+    }
+  }
+
+  const content = el("div", { class: "stack" }, [
+    el("div", { class: "modal__title" }, `Parqueo ${space.number} — Moto`),
+    el("div", { class: "card" }, [
+      row("Nombre", session.visitorName),
+      row("Cédula", session.visitorId),
+      row("Placa", session.plate),
+      row("Destino", `${session.destinationType === "office" ? "Oficina" : "Apartamento"} ${session.destinationNumber || ""}`),
+      row("Entrada", formatDateTime(session.entryAt)),
+      row("Registrado por", `${session.entryGuardName || ""} (Lobby ${session.entryLobby || "-"})`),
+    ]),
+    el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
+    qrBtn,
+    whatsappBtn,
+    readOnlyNote,
+    errorBox,
+    confirmBtn,
+  ].filter(Boolean));
+
+  const tickerStop = startLocalTicker(() => {
+    timerEl.textContent = formatElapsed(session.entryAt);
+  });
+
+  const closeFn = openModal(content);
+
+  if (confirmBtn) {
+    confirmBtn.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: "Confirmar salida",
+        body: `¿Confirma la salida de la moto ${session.plate} (parqueo ${space.number})? Ese cupo de moto quedará disponible de inmediato.`,
+        confirmText: "Sí, registrar salida",
+        danger: true,
+      });
+      if (!ok) return;
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "GUARDANDO...";
+      try {
+        await registerMotoExit(session.id, session.entryAt);
+        toast(`Salida registrada. Cupo de moto liberado en el parqueo ${space.number}.`, "success");
+        tickerStop();
+        closeFn();
       } catch (err) {
         errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la salida. Intente nuevamente.";
         errorBox.style.display = "block";
