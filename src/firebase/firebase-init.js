@@ -11,7 +11,7 @@ import {
 import {
   initializeFirestore,
   persistentLocalCache,
-  persistentSingleTabManager,
+  persistentMultipleTabManager,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 
 let firebaseConfig;
@@ -32,10 +32,16 @@ export const auth = getAuth(app);
 // tener que iniciar sesión en cada turno si no ha cerrado sesión).
 await setPersistence(auth, browserLocalPersistence);
 
-// Caché local con una sola pestaña activa: permite que la pantalla de
+// Caché local con soporte multi-pestaña: permite que la pantalla de
 // Parqueos siga mostrando el último estado conocido si se pierde la
-// conexión por un momento, sin arriesgar datos contradictorios entre
-// pestañas del mismo dispositivo.
+// conexión por un momento. Antes usaba persistentSingleTabManager (una sola
+// pestaña con acceso a la vez), pero eso rompía el "doble uso del mismo QR"
+// de consulta.js: al escanear el código QR de un parqueo, el celular abre
+// el enlace en una pestaña NUEVA de Safari/Chrome — si la app principal ya
+// estaba abierta en otra pestaña, la pestaña nueva se quedaba sin acceso a
+// la base de datos local y fallaba al intentar registrar la salida desde
+// ahí. persistentMultipleTabManager sincroniza la caché entre todas las
+// pestañas del mismo origen en vez de restringirla a una sola.
 // databaseId "default": al crear la base de datos en la consola de Firebase
 // escribiendo "(default)", Firebase la registró con el ID "default" (sin
 // paréntesis) en vez del nombre especial reservado "(default)" que el SDK
@@ -44,7 +50,7 @@ await setPersistence(auth, browserLocalPersistence);
 export const db = initializeFirestore(
   app,
   {
-    localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
   },
   "default"
 );
