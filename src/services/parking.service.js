@@ -200,8 +200,12 @@ export async function registerEntry(spaceNumber, data) {
         updatedAt: serverTimestamp(),
       }),
       // Espejo público (sin datos personales) para la consulta por QR.
+      // vehicleKind: "car" — así consulta.js sabe, sin leer nada más, si el
+      // botón "Registrar salida" debe usar registerExit (toca el espacio) o
+      // registerMotoExit (no lo toca, ver nota de motos más abajo).
       setDoc(doc(db, "public_status", sessionRef.id), {
         spaceNumber,
+        vehicleKind: "car",
         destinationType,
         entryAt: entryAtValue,
         maxMinutesAtEntry: maxMinutes,
@@ -365,6 +369,7 @@ export async function registerMotoEntry(spaceNumber, data) {
       }),
       setDoc(doc(db, "public_status", sessionRef.id), {
         spaceNumber,
+        vehicleKind: "moto",
         destinationType,
         entryAt: entryAtValue,
         maxMinutesAtEntry: maxMinutes,

@@ -132,3 +132,19 @@ export async function resetUserPassword(email) {
     return { ok: false, message: friendlyError(err) };
   }
 }
+
+/**
+ * "¿Olvidó su contraseña?" en la pantalla de inicio de sesión — a
+ * diferencia de resetUserPassword() de arriba, esta SÍ debe poder llamarse
+ * sin haber iniciado sesión (nadie tiene perfil todavía en ese momento), así
+ * que no valida ningún rol. Envía el mismo correo de restablecimiento que
+ * usa administración.
+ */
+export async function sendSelfPasswordReset(email) {
+  try {
+    await sendPasswordResetEmail(auth, email.trim());
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, message: friendlyError(err) };
+  }
+}

@@ -10,6 +10,7 @@ import { renderAccessItemsAdminTab } from "./admin/access-items-admin.tab.js";
 import { renderReportsTab } from "./admin/reports.tab.js";
 import { renderCorrectionsTab } from "./admin/corrections.tab.js";
 import { renderDemoTab } from "./admin/demo.tab.js";
+import { renderDeveloperTab } from "./admin/developer.tab.js";
 
 const TABS = [
   { id: "dashboard", label: "Panel", render: renderDashboardTab },
@@ -20,6 +21,7 @@ const TABS = [
   { id: "reports", label: "Reportes e historial", render: renderReportsTab },
   { id: "corrections", label: "Correcciones", render: renderCorrectionsTab },
   { id: "demo", label: "Demostración", render: renderDemoTab },
+  { id: "developer", label: "Desarrollador", render: renderDeveloperTab },
 ];
 
 // El rol "viewer" (solo lectura) solo puede operar/ver estas dos pestañas —
@@ -32,7 +34,11 @@ export function renderAdmin(root, params) {
   clear(root);
   const profile = getProfile();
   const isViewer = profile.role === "viewer";
-  const tabs = isViewer ? TABS.filter((t) => VIEWER_TAB_IDS.includes(t.id)) : TABS;
+  let tabs = isViewer ? TABS.filter((t) => VIEWER_TAB_IDS.includes(t.id)) : TABS;
+  // La pestaña "Desarrollador" es una comodidad visual extra, no una barrera
+  // de seguridad (ver la nota en developer.tab.js) — solo se muestra a quien
+  // administración marcó explícitamente con isDeveloper:true.
+  if (!profile.isDeveloper) tabs = tabs.filter((t) => t.id !== "developer");
 
   root.appendChild(
     el("div", { class: "back-bar" }, [

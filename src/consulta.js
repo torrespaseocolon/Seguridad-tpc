@@ -20,7 +20,7 @@ import { icon } from "./utils/icons.js";
 import { initTheme } from "./utils/theme.js";
 import { formatDateTime, startLocalTicker, toMillis } from "./utils/time.js";
 import { subscribeAuth } from "./services/auth.service.js";
-import { registerExit, OperationError } from "./services/parking.service.js";
+import { registerExit, registerMotoExit, OperationError } from "./services/parking.service.js";
 import { friendlyError } from "./utils/errors.js";
 
 initTheme();
@@ -145,7 +145,16 @@ function renderStatus(data) {
         exitBtn.disabled = true;
         exitBtn.textContent = "GUARDANDO...";
         try {
-          await registerExit(data.spaceNumber, id, data.entryAt);
+          // Una moto no es la única ocupante de su espacio (ver nota de
+          // motos en parking.service.js) — usa registerMotoExit, que no
+          // toca el documento del espacio compartido. vehicleKind falta en
+          // registros de antes de que existiera esta distinción: en ese
+          // caso se asume "car" (el comportamiento de siempre).
+          if (data.vehicleKind === "moto") {
+            await registerMotoExit(id, data.entryAt);
+          } else {
+            await registerExit(data.spaceNumber, id, data.entryAt);
+          }
           toast("Salida registrada.", "success");
           // La propia consulta se actualiza sola (escucha en tiempo real).
         } catch (err) {

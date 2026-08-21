@@ -37,6 +37,7 @@ function renderUserCard(user, reload) {
     el("option", { value: "A", selected: user.lobby === "A" }, "Lobby A"),
     el("option", { value: "B", selected: user.lobby === "B" }, "Lobby B"),
   ]);
+  const devCheckbox = el("input", { type: "checkbox", checked: !!user.isDeveloper });
   const saveBtn = el("button", { class: "btn btn--primary" }, "Guardar cambios");
   const toggleBtn = el(
     "button",
@@ -52,7 +53,7 @@ function renderUserCard(user, reload) {
     }
     saveBtn.disabled = true;
     try {
-      await updateUser(user.uid, { role: roleSelect.value, lobby: lobbySelect.value || null });
+      await updateUser(user.uid, { role: roleSelect.value, lobby: lobbySelect.value || null, isDeveloper: devCheckbox.checked });
       toast("Usuario actualizado.", "success");
       reload();
     } catch (err) {
@@ -133,7 +134,8 @@ function renderUserCard(user, reload) {
       el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Rol"), roleSelect]),
       el("div", { class: "form-group grow" }, [el("label", { class: "form-label" }, "Lobby"), lobbySelect]),
     ]),
-    el("div", { class: "row", style: "flex-wrap:wrap;" }, [saveBtn, toggleBtn, resetPassBtn, deleteBtn]),
+    el("label", { class: "row", style: "gap:8px; align-items:center; cursor:pointer;" }, [devCheckbox, "Acceso a la pestaña Desarrollador (solo aplica si el rol es Administrador)"]),
+    el("div", { class: "row mt-md", style: "flex-wrap:wrap;" }, [saveBtn, toggleBtn, resetPassBtn, deleteBtn]),
   ]);
 }
 
