@@ -11,7 +11,6 @@ import {
   buildConsultaUrl,
   OperationError,
 } from "../services/parking.service.js";
-import { getTimeRules } from "../services/settings.service.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { qrImageUrl } from "../utils/qr.js";
 import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
@@ -331,12 +330,6 @@ function openEntryModal(space) {
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
 
-  const rules = getTimeRules();
-  const limitHint = el(
-    "div",
-    { class: "form-hint" },
-    `El sistema detecta automáticamente si es apartamento u oficina/comercio según la torre y el piso, y aplica el límite correspondiente: apartamentos hasta ${rules.maxMinutesApartment / 60} horas, oficinas/comercios hasta ${rules.maxMinutesOffice / 60} horas. Máximo ${rules.maxSimultaneousPerDestination} parqueos de visita simultáneos por apartamento/oficina.`
-  );
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR ENTRADA");
 
@@ -390,10 +383,8 @@ function openEntryModal(space) {
       field("Cédula", idInput),
       field("Placa", plateInput),
       field("Teléfono (opcional, para avisarle por WhatsApp)", phoneInput),
-      field("Torre", destField.towerSelect),
-      field("Número de piso + unidad", destField.numberInput),
+      field("Torre + piso + unidad", destField.input),
       destField.hint,
-      limitHint,
       errorBox,
       submitBtn,
     ].filter(Boolean)
@@ -493,12 +484,6 @@ function openMotoEntryModal(space) {
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
 
-  const rules = getTimeRules();
-  const limitHint = el(
-    "div",
-    { class: "form-hint" },
-    `El sistema detecta automáticamente si es apartamento u oficina/comercio según la torre y el piso, y aplica el límite correspondiente: apartamentos hasta ${rules.maxMinutesApartment / 60} horas, oficinas/comercios hasta ${rules.maxMinutesOffice / 60} horas. Máximo ${rules.maxSimultaneousPerDestination} parqueos de visita simultáneos por apartamento/oficina.`
-  );
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR ENTRADA");
 
@@ -548,10 +533,8 @@ function openMotoEntryModal(space) {
       field("Cédula", idInput),
       field("Placa", plateInput),
       field("Teléfono (opcional, para avisarle por WhatsApp)", phoneInput),
-      field("Torre", destField.towerSelect),
-      field("Número de piso + unidad", destField.numberInput),
+      field("Torre + piso + unidad", destField.input),
       destField.hint,
-      limitHint,
       errorBox,
       submitBtn,
     ].filter(Boolean)

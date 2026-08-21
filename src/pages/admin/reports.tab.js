@@ -43,8 +43,7 @@ export function renderReportsTab(root) {
     el("div", { class: "row", style: "flex-wrap:wrap; gap:12px;" }, [
       field("Desde", fromInput),
       field("Hasta", toInput),
-      field("Torre", destField.towerSelect),
-      field("Piso + unidad", destField.numberInput),
+      field("Torre + piso + unidad", destField.input),
       el("div", { style: "align-self:flex-end;" }, [clearBtn]),
     ]),
     destField.hint,
@@ -53,14 +52,13 @@ export function renderReportsTab(root) {
   clearBtn.addEventListener("click", () => {
     fromInput.value = "";
     toInput.value = "";
-    destField.numberInput.value = "";
+    destField.input.value = "";
     destField.refresh();
     load();
   });
   fromInput.addEventListener("change", load);
   toInput.addEventListener("change", load);
-  destField.towerSelect.addEventListener("change", load);
-  destField.numberInput.addEventListener("change", load);
+  destField.input.addEventListener("change", load);
 
   const content = el("div", {});
   root.appendChild(tabBar);

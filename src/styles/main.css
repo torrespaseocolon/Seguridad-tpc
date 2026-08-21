@@ -40,7 +40,11 @@ a { color: inherit; }
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border);
   box-shadow: var(--shadow-header);
-  padding: var(--space-md);
+  /* padding-top extra: en un iPhone instalado como app (PWA), el contenido
+     puede quedar tapado por el notch/Isla Dinámica o la barra de estado si
+     no se le hace lugar — env(safe-area-inset-*) lo resuelve solo (en
+     Android o navegador normal vale 0px, no cambia nada). */
+  padding: calc(var(--space-md) + env(safe-area-inset-top)) calc(var(--space-md) + env(safe-area-inset-right)) var(--space-md) calc(var(--space-md) + env(safe-area-inset-left));
   display: flex;
   align-items: center;
   gap: var(--space-md);
@@ -257,31 +261,6 @@ a { color: inherit; }
 .form-control:focus { outline: none; border-color: var(--color-primary); }
 select.form-control { appearance: none; }
 
-/* Selector visual de Torre (A/B): dos botones grandes en vez de un <select>,
-   para elegir de un solo toque en vez de abrir un desplegable. */
-.tower-toggle { display: flex; gap: var(--space-sm); }
-.tower-toggle__btn {
-  flex: 1;
-  min-height: var(--touch-target-min);
-  padding: 12px 14px;
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-bold);
-  font-family: inherit;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  text-align: center;
-  transition: transform 0.05s ease;
-  -webkit-tap-highlight-color: transparent;
-}
-.tower-toggle__btn:active { transform: scale(0.98); }
-.tower-toggle__btn--active {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: #fff;
-}
 .form-hint { font-size: var(--font-size-sm); color: var(--color-text-faint); margin-top: 4px; }
 .form-error { font-size: var(--font-size-sm); color: var(--color-danger); margin-top: 4px; font-weight: var(--font-weight-bold); }
 .form-actions { display: flex; gap: var(--space-sm); margin-top: var(--space-lg); }
@@ -328,7 +307,7 @@ select.form-control { appearance: none; }
 
 #toast-region {
   position: fixed;
-  top: 12px;
+  top: calc(12px + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   z-index: 100;
@@ -372,7 +351,9 @@ select.form-control { appearance: none; }
   max-height: 92vh;
   overflow-y: auto;
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  padding: var(--space-lg);
+  /* padding-bottom extra: en un iPhone, la barra/indicador de inicio queda
+     justo debajo de la hoja modal si no se le da ese margen. */
+  padding: var(--space-lg) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom));
   box-shadow: var(--shadow-card);
 }
 @media (min-width: 640px) {
@@ -445,7 +426,7 @@ select.form-control { appearance: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--space-md);
+  padding: calc(var(--space-md) + env(safe-area-inset-top)) calc(var(--space-md) + env(safe-area-inset-right)) calc(var(--space-md) + env(safe-area-inset-bottom)) calc(var(--space-md) + env(safe-area-inset-left));
 }
 .login-card { width: 100%; max-width: 380px; }
 .login-logo {

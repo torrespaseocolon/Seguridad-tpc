@@ -184,8 +184,7 @@ function openNewPackageModal(reload) {
     },
     [
       el("div", { class: "modal__title" }, "Nuevo paquete"),
-      field("Torre *", destField.towerSelect),
-      field("Piso + unidad *", destField.numberInput),
+      field("Torre + piso + unidad *", destField.input),
       destField.hint,
       field("Nombre del destinatario *", nameInput),
       field("Empresa de mensajería *", courierInput),
@@ -197,7 +196,7 @@ function openNewPackageModal(reload) {
   );
 
   const closeFn = openModal(form);
-  destField.numberInput.focus();
+  destField.input.focus();
 }
 
 function field(labelText, inputNode) {
