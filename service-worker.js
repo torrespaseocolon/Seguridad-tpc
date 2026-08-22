@@ -14,7 +14,7 @@
 // con el número de CACHE_NAME incrementado (ver README, "Actualizaciones
 // futuras") para que los dispositivos descarguen los archivos nuevos en
 // lugar de seguir usando la copia guardada.
-const CACHE_NAME = "seguridad-tpc-v35";
+const CACHE_NAME = "seguridad-tpc-v36";
 
 // consulta.html es una página pública para visitantes ocasionales (la abren
 // desde un código QR, casi nunca la vuelven a visitar) — no le aporta nada

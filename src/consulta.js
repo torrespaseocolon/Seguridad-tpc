@@ -18,6 +18,7 @@ import {
 import { el, clear, toast, confirmDialog } from "./utils/dom.js";
 import { icon } from "./utils/icons.js";
 import { initTheme } from "./utils/theme.js";
+import { qrImageUrl } from "./utils/qr.js";
 import { formatDateTime, startLocalTicker, toMillis } from "./utils/time.js";
 import { subscribeAuth } from "./services/auth.service.js";
 import { registerExit, registerMotoExit, OperationError } from "./services/parking.service.js";
@@ -131,6 +132,19 @@ function renderStatus(data) {
         el("div", { class: "alert alert--info" }, `Se le extendió el tiempo permitido en ${data.extendedMinutes} minutos adicionales.`)
       );
     }
+
+    // Mismo código QR de la entrada, otra vez acá: al salir, el visitante
+    // le muestra esta pantalla al guardia, que lo escanea con SU propio
+    // celular — así el guardia no tiene que buscar manualmente el espacio
+    // en Parqueos, el enlace lo lleva directo a esta consulta (y si el
+    // guardia tiene sesión iniciada en su celular, ahí mismo le va a
+    // aparecer el botón "Registrar salida").
+    children.push(
+      el("div", { class: "text-center mt-md" }, [
+        el("div", { class: "text-secondary mb-md" }, "Al salir, muéstrele esta pantalla al guardia para que escanee este código y registre su salida."),
+        el("img", { src: qrImageUrl(window.location.href), alt: "Código QR de esta consulta", style: "margin:0 auto; border-radius:var(--radius-sm);" }),
+      ])
+    );
 
     if (staffProfile) {
       const exitBtn = el("button", { class: "btn btn--danger btn--block btn--lg mt-md" }, "REGISTRAR SALIDA");
