@@ -139,12 +139,19 @@ export async function resetUserPassword(email) {
  * sin haber iniciado sesión (nadie tiene perfil todavía en ese momento), así
  * que no valida ningún rol. Envía el mismo correo de restablecimiento que
  * usa administración.
+ *
+ * Si el correo no existe, se responde IGUAL que si el envío hubiera sido
+ * exitoso (mensaje genérico) — nunca "no existe una cuenta con ese correo".
+ * Sin esto, cualquiera podría usar este formulario público para probar
+ * direcciones de correo una por una y descubrir cuáles son cuentas reales
+ * del personal, sin necesidad de iniciar sesión.
  */
 export async function sendSelfPasswordReset(email) {
   try {
     await sendPasswordResetEmail(auth, email.trim());
     return { ok: true };
   } catch (err) {
+    if (err?.code === "auth/user-not-found") return { ok: true };
     return { ok: false, message: friendlyError(err) };
   }
 }
