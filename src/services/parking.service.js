@@ -509,6 +509,42 @@ export async function fetchParkingHistory({ max = 50, from = null, to = null } =
 }
 
 /**
+ * Panel de administración: detecta placas que visitaron el MISMO
+ * apartamento/oficina más de `minVisits - 1` veces en los últimos `days`
+ * días (pedido por administración para notar visitas frecuentes que
+ * podrían ser en realidad un residente sin registrar o un patrón a
+ * revisar). Trae solo por rango de fecha (una sola condición, no necesita
+ * índice compuesto en Firestore) y agrupa/filtra en el navegador — filtra
+ * isDemo aparte también en el navegador, para no necesitar ese índice
+ * compuesto tampoco.
+ */
+export async function fetchFrequentVisitorAlerts({ days = 7, minVisits = 3 } = {}) {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const snap = await getDocs(query(collection(db, "parking_sessions"), where("entryAt", ">=", since), orderBy("entryAt", "desc")));
+
+  const byKey = new Map();
+  for (const d of snap.docs) {
+    const s = d.data();
+    if (s.isDemo || !s.plate || !s.destinationNumber) continue;
+    const key = `${s.plate}|${s.destinationNumber}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, {
+        plate: s.plate,
+        destinationNumber: s.destinationNumber,
+        destinationType: s.destinationType,
+        count: 0,
+        lastEntry: s.entryAt, // el primero visto ya es el más reciente (orderBy desc)
+      });
+    }
+    byKey.get(key).count++;
+  }
+
+  return Array.from(byKey.values())
+    .filter((v) => v.count >= minVisits)
+    .sort((a, b) => b.count - a.count);
+}
+
+/**
  * Solo administración: corrige un registro cerrado por error (por ejemplo,
  * "registré por error la salida de otro vehículo"). Reabre la sesión y
  * vuelve a ocupar su espacio, siempre que ese espacio esté libre en este

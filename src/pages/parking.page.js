@@ -325,7 +325,7 @@ function openEntryModal(space) {
   const nameInput = el("input", { class: "form-control", required: true });
   const idInput = el("input", { class: "form-control", required: true });
   const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
-  const phoneInput = el("input", { class: "form-control", type: "tel", placeholder: "Ej. 8888 8888" });
+  const phoneInput = el("input", { class: "form-control", type: "tel", required: true, placeholder: "Ej. 8888 8888" });
 
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
@@ -368,7 +368,7 @@ function openEntryModal(space) {
             lobbyOverride: "B",
           });
           toast(`Entrada registrada en el parqueo ${space.number}.`, "success");
-          showConsultaQr(space.number, result.consultaUrl, closeFn);
+          showConsultaQr(space.number, result.consultaUrl, closeFn, { name: nameInput.value.trim(), phone: phoneInput.value.trim() });
         } catch (err) {
           errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la entrada. Intente nuevamente.";
           errorBox.style.display = "block";
@@ -382,7 +382,7 @@ function openEntryModal(space) {
       field("Nombre", nameInput),
       field("Cédula", idInput),
       field("Placa", plateInput),
-      field("Teléfono (opcional, para avisarle por WhatsApp)", phoneInput),
+      field("Teléfono *", phoneInput),
       field("Torre + piso + unidad", destField.input),
       destField.hint,
       errorBox,
@@ -405,7 +405,7 @@ function openExitModal(space) {
     : el("div", { class: "form-hint text-center" }, "Solo el guardia de Lobby B (o un administrador) puede registrar la salida. Puede avisarle al visitante por WhatsApp o mostrarle el QR mientras tanto.");
   const qrBtn = el("button", { class: "btn btn--secondary btn--block" }, [icon("card", { size: 18 }), " Ver código QR de consulta"]);
   qrBtn.addEventListener("click", () => {
-    if (space.sessionId) showConsultaQr(space.number, buildConsultaUrl(space.sessionId), null);
+    if (space.sessionId) showConsultaQr(space.number, buildConsultaUrl(space.sessionId), null, { name: space.visitorName, phone: space.visitorPhone });
   });
 
   let whatsappBtn = null;
@@ -479,7 +479,7 @@ function openMotoEntryModal(space) {
   const nameInput = el("input", { class: "form-control", required: true });
   const idInput = el("input", { class: "form-control", required: true });
   const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
-  const phoneInput = el("input", { class: "form-control", type: "tel", placeholder: "Ej. 8888 8888" });
+  const phoneInput = el("input", { class: "form-control", type: "tel", required: true, placeholder: "Ej. 8888 8888" });
 
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
@@ -518,7 +518,7 @@ function openMotoEntryModal(space) {
             lobbyOverride: "B",
           });
           toast(`Entrada de moto registrada en el parqueo ${space.number}.`, "success");
-          showConsultaQr(`${space.number} (moto)`, result.consultaUrl, closeFn);
+          showConsultaQr(`${space.number} (moto)`, result.consultaUrl, closeFn, { name: nameInput.value.trim(), phone: phoneInput.value.trim() });
         } catch (err) {
           errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la entrada. Intente nuevamente.";
           errorBox.style.display = "block";
@@ -532,7 +532,7 @@ function openMotoEntryModal(space) {
       field("Nombre", nameInput),
       field("Cédula", idInput),
       field("Placa", plateInput),
-      field("Teléfono (opcional, para avisarle por WhatsApp)", phoneInput),
+      field("Teléfono *", phoneInput),
       field("Torre + piso + unidad", destField.input),
       destField.hint,
       errorBox,
@@ -554,7 +554,7 @@ function openMotoExitModal(space, session) {
     ? null
     : el("div", { class: "form-hint text-center" }, "Solo el guardia de Lobby B (o un administrador) puede registrar la salida. Puede avisarle al visitante por WhatsApp o mostrarle el QR mientras tanto.");
   const qrBtn = el("button", { class: "btn btn--secondary btn--block" }, [icon("card", { size: 18 }), " Ver código QR de consulta"]);
-  qrBtn.addEventListener("click", () => showConsultaQr(`${space.number} (moto)`, buildConsultaUrl(session.id), null));
+  qrBtn.addEventListener("click", () => showConsultaQr(`${space.number} (moto)`, buildConsultaUrl(session.id), null, { name: session.visitorName, phone: session.visitorPhone }));
 
   let whatsappBtn = null;
   if (session.visitorPhone) {
@@ -667,16 +667,36 @@ function buildNotifyToggle() {
   return btn;
 }
 
-/** Muestra el código QR de consulta pública para que el guardia se lo enseñe al visitante. */
-function showConsultaQr(spaceNumber, consultaUrl, closeParentModal) {
+/**
+ * Muestra el código QR de consulta pública para que el guardia se lo
+ * enseñe al visitante. `contact` (opcional: { name, phone }) agrega un
+ * botón para mandárselo por WhatsApp — el mensaje lleva el enlace de
+ * consulta como texto (WhatsApp no permite adjuntar la imagen del QR desde
+ * un enlace wa.me sin la API de pago de WhatsApp Business), así que si el
+ * QR no carga o no se puede escanear, el enlace es el respaldo: abre la
+ * misma pantalla, que también muestra el código QR.
+ */
+function showConsultaQr(spaceNumber, consultaUrl, closeParentModal, contact) {
   if (closeParentModal) closeParentModal();
   const okBtn = el("button", { class: "btn btn--primary btn--block btn--lg mt-md" }, "LISTO");
-  const content = el("div", { class: "stack text-center" }, [
+  const children = [
     el("div", { class: "modal__title" }, `Código de consulta — Parqueo ${spaceNumber}`),
     el("div", { class: "text-secondary mb-md" }, "Muéstrele este código QR al visitante para que consulte desde su celular cuánto tiempo de parqueo le queda, sin necesidad de cuenta ni contraseña."),
     el("img", { src: qrImageUrl(consultaUrl), alt: "Código QR de consulta", style: "margin:0 auto; border-radius:var(--radius-sm);" }),
-    okBtn,
-  ]);
+  ];
+
+  if (contact?.phone) {
+    const message = `Hola${contact.name ? " " + contact.name : ""}, le escribimos de seguridad Torres Paseo Colón: este es su enlace para consultar el tiempo de su parqueo (parqueo ${spaceNumber}): ${consultaUrl}`;
+    const link = whatsappLink(contact.phone, message);
+    if (link) {
+      children.push(
+        el("a", { href: link, target: "_blank", rel: "noopener", class: "btn btn--success btn--block mt-md" }, [icon("whatsapp", { size: 18 }), " Enviar por WhatsApp"])
+      );
+    }
+  }
+
+  children.push(okBtn);
+  const content = el("div", { class: "stack text-center" }, children);
   const closeFn = openModal(content);
   okBtn.addEventListener("click", closeFn);
 }

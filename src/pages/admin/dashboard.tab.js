@@ -12,18 +12,20 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { elapsedMinutes, formatDateTime } from "../../utils/time.js";
 import { friendlyError } from "../../utils/errors.js";
+import { fetchFrequentVisitorAlerts } from "../../services/parking.service.js";
 
 export async function renderDashboardTab(root) {
   clear(root);
   root.appendChild(loadingState("Cargando panel..."));
   try {
-    const [spacesSnap, packagesCount, loansCount, accessCount, foundCount, recentAudit] = await Promise.all([
+    const [spacesSnap, packagesCount, loansCount, accessCount, foundCount, recentAudit, frequentVisitors] = await Promise.all([
       getDocs(collection(db, "parking_spaces")),
       getCountFromServer(query(collection(db, "packages"), where("status", "==", "pending"))),
       getCountFromServer(query(collection(db, "object_loans"), where("status", "==", "loaned"))),
       getCountFromServer(query(collection(db, "access_items"), where("status", "==", "pending"))),
       getCountFromServer(query(collection(db, "found_items"), where("status", "==", "pending"))),
       getDocs(query(collection(db, "audit_logs"), orderBy("createdAt", "desc"), fbLimit(12))),
+      fetchFrequentVisitorAlerts(),
     ]);
 
     const spaces = spacesSnap.docs.map((d) => d.data());
@@ -51,6 +53,11 @@ export async function renderDashboardTab(root) {
         statTile("search", String(foundCount.data().count), "Objetos encontrados pendientes"),
       ])
     );
+
+    if (frequentVisitors.length > 0) {
+      root.appendChild(el("div", { class: "card__title mt-lg row" }, [icon("warning", { size: 18 }), "Visitas frecuentes (últimos 7 días)"]));
+      root.appendChild(frequentVisitorsCard(frequentVisitors));
+    }
 
     root.appendChild(el("div", { class: "card__title mt-lg" }, "Ocupación por lobby"));
     root.appendChild(lobbyComparisonCard(lobbyA, lobbyB));
@@ -94,6 +101,28 @@ function statTile(iconName, value, label, alert = false, bar = null) {
     el("div", { class: "text-secondary" }, label),
     bar,
   ].filter(Boolean));
+}
+
+/**
+ * Alerta de placas que visitaron el mismo apartamento/oficina 3 veces o
+ * más en los últimos 7 días — no bloquea nada, solo lo pone a la vista de
+ * administración para que decida si vale la pena revisarlo (ej. podría ser
+ * un vehículo que en realidad debería estar registrado como residente).
+ */
+function frequentVisitorsCard(alerts) {
+  return el(
+    "div",
+    { class: "stack" },
+    alerts.map((a) =>
+      el("div", { class: "card row row--between", style: "border-color:var(--color-warning);" }, [
+        el("div", {}, [
+          el("div", { style: "font-weight:700;" }, a.plate),
+          el("div", { class: "text-secondary" }, `${a.destinationType === "office" ? "Oficina" : "Apartamento"} ${a.destinationNumber} · última vez: ${formatDateTime(a.lastEntry)}`),
+        ]),
+        el("span", { class: "badge badge--warning" }, `${a.count} veces esta semana`),
+      ])
+    )
+  );
 }
 
 /** Barra de proporción simple (div dentro de div, sin librerías) para leer un dato de un vistazo. */
