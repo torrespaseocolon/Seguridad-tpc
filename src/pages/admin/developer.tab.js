@@ -12,8 +12,12 @@ import {
   collection,
   getDocs,
   getCountFromServer,
+  deleteDoc,
+  updateDoc,
+  doc,
+  serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
-import { fetchRecentAudit } from "../../services/audit.service.js";
+import { fetchRecentAudit, logAudit } from "../../services/audit.service.js";
 import { getSettings, updateSettings } from "../../services/settings.service.js";
 import { isOnline } from "../../utils/connectivity.js";
 import { formatDateTime } from "../../utils/time.js";
@@ -23,7 +27,7 @@ import { firebaseConfig } from "../../firebase/firebase-config.js";
 // Mantener igual al CACHE_NAME de service-worker.js — no hay forma de leerlo
 // automáticamente desde acá (son dos archivos totalmente separados), así que
 // hay que actualizar esta línea a mano cuando se suba una versión nueva.
-const APP_VERSION = "seguridad-tpc-v38";
+const APP_VERSION = "seguridad-tpc-v39";
 
 // public_status queda afuera a propósito: firestore.rules bloquea "list" en
 // esa colección sin excepción (ni siquiera para administración) — solo se
@@ -45,6 +49,24 @@ const BACKUP_COLLECTIONS = [
   "settings",
 ];
 
+// Colecciones que "Reiniciar datos del sistema" borra por completo. users y
+// settings quedan siempre afuera a propósito — eso no es "historial
+// operativo", es la configuración de cuentas y reglas del sistema en sí.
+// public_status NO está en esta lista: firestore.rules bloquea "list" ahí
+// sin excepción (ver nota en BACKUP_COLLECTIONS más arriba) — se borra
+// aparte, un documento a la vez por su ID (eso sí está permitido), usando
+// los mismos ID que parking_sessions (se crean siempre en pareja).
+const WIPE_COLLECTIONS = [
+  "parking_sessions",
+  "packages",
+  "access_items",
+  "found_items",
+  "object_loans",
+  "objects",
+  "audit_logs",
+  "error_reports",
+];
+
 export async function renderDeveloperTab(root) {
   clear(root);
   root.appendChild(loadingState("Cargando panel de desarrollador..."));
@@ -60,6 +82,7 @@ export async function renderDeveloperTab(root) {
     root.appendChild(appInfoCard(settings));
     root.appendChild(countsCard(counts));
     root.appendChild(backupCard());
+    root.appendChild(resetDataCard(root));
     root.appendChild(auditCard(recentAudit));
     root.appendChild(settingsEditorCard(settings));
     root.appendChild(linksCard());
@@ -137,6 +160,95 @@ function backupCard() {
     sectionTitle("download", "Respaldo manual"),
     el("div", { class: "text-secondary mb-md" }, "Descarga TODA la base de datos actual en un solo archivo .json, tal como está en este momento."),
     downloadBtn,
+  ]);
+}
+
+/**
+ * Borra TODO el historial operativo real (no solo demo) y deja los
+ * espacios de parqueo libres — requiere que firestore.rules ya permita
+ * borrar cada una de estas colecciones sin la restricción isDemo==true
+ * (ver la nota del mismo cambio en firestore.rules). parking_spaces nunca
+ * se borra (la regla lo bloquea a propósito, para no perder la
+ * identidad de cada espacio) — se resetea a libre en su lugar.
+ */
+async function wipeAllData(log) {
+  for (const name of WIPE_COLLECTIONS) {
+    const snap = await getDocs(collection(db, name));
+    for (const d of snap.docs) {
+      await deleteDoc(doc(db, name, d.id));
+      // public_status se crea siempre con el mismo ID que su
+      // parking_sessions — se borra aquí, por ID puntual (la colección en
+      // sí no se puede listar, ver nota arriba).
+      if (name === "parking_sessions") {
+        await deleteDoc(doc(db, "public_status", d.id));
+      }
+    }
+    log(`${name}: ${snap.docs.length} documento(s) eliminado(s).`);
+  }
+
+  const spacesSnap = await getDocs(collection(db, "parking_spaces"));
+  for (const d of spacesSnap.docs) {
+    await updateDoc(doc(db, "parking_spaces", d.id), {
+      status: "free",
+      sessionId: null,
+      visitorName: null,
+      visitorId: null,
+      plate: null,
+      visitorPhone: null,
+      isDemo: false,
+      destinationType: null,
+      destinationNumber: null,
+      entryAt: null,
+      entryGuardName: null,
+      entryLobby: null,
+      maxMinutesAtEntry: null,
+      updatedAt: serverTimestamp(),
+    });
+  }
+  log(`parking_spaces: ${spacesSnap.docs.length} espacio(s) reiniciado(s) a LIBRE.`);
+
+  // Este SÍ queda: es la única entrada de auditoría del sistema "nuevo",
+  // dejando registrado quién reinició todo y cuándo.
+  await logAudit("system.reset", { details: { collections: WIPE_COLLECTIONS } });
+}
+
+function resetDataCard(root) {
+  const confirmInput = el("input", { class: "form-control", placeholder: "Escriba BORRAR TODO" });
+  const resetBtn = el("button", { class: "btn btn--danger btn--block", disabled: true }, "REINICIAR DATOS DEL SISTEMA");
+  const logBox = el("div", { class: "stack mt-md" });
+
+  confirmInput.addEventListener("input", () => {
+    resetBtn.disabled = confirmInput.value.trim() !== "BORRAR TODO";
+  });
+
+  resetBtn.addEventListener("click", async () => {
+    const ok = await confirmDialog({
+      title: "Reiniciar datos del sistema",
+      body: "Esto BORRA PARA SIEMPRE todo el historial de parqueos, paquetes, tarjetas/stickers, objetos encontrados, el catálogo completo de objetos y préstamos, la auditoría y los reportes de error. Los espacios de parqueo quedan libres, listos para usar. Los usuarios y la configuración general NO se tocan. Esta acción NO se puede deshacer.",
+      confirmText: "Sí, borrar todo",
+      danger: true,
+    });
+    if (!ok) return;
+    resetBtn.disabled = true;
+    resetBtn.textContent = "BORRANDO...";
+    clear(logBox);
+    try {
+      await wipeAllData((msg) => logBox.appendChild(el("div", { class: "text-secondary" }, `✓ ${msg}`)));
+      toast("Sistema reiniciado.", "success");
+      renderDeveloperTab(root);
+    } catch (err) {
+      toast(friendlyError(err), "danger");
+      resetBtn.disabled = false;
+      resetBtn.textContent = "REINICIAR DATOS DEL SISTEMA";
+    }
+  });
+
+  return el("div", { class: "card mb-md", style: "border-color:var(--color-danger);" }, [
+    sectionTitle("warning", "Reiniciar datos del sistema"),
+    el("div", { class: "text-secondary mb-md" }, "Borra TODO el historial real (parqueos, paquetes, tarjetas/stickers, objetos encontrados, catálogo de objetos y préstamos, auditoría y reportes de error) y deja el sistema como recién instalado. Los usuarios y la configuración general no se tocan. No se puede deshacer — considere descargar el respaldo de arriba primero."),
+    el("div", { class: "form-group" }, [el("label", { class: "form-label" }, "Para confirmar, escriba BORRAR TODO"), confirmInput]),
+    resetBtn,
+    logBox,
   ]);
 }
 

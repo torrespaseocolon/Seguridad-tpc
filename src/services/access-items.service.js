@@ -3,6 +3,7 @@ import {
   collection,
   setDoc,
   updateDoc,
+  deleteDoc,
   doc,
   query,
   where,
@@ -61,6 +62,25 @@ export async function deliverAccessItem(id) {
     })
   );
   logAudit("access_item.deliver", { targetCollection: "access_items", targetId: id });
+}
+
+export async function updateAccessItem(id, patch) {
+  const profile = getProfile();
+  await settle(updateDoc(doc(db, "access_items", id), { ...patch, updatedAt: new Date(), updatedByUid: profile.uid }));
+  logAudit("access_item.update", { targetCollection: "access_items", targetId: id, details: patch });
+}
+
+/**
+ * Requiere que firestore.rules permita borrar access_items reales (no solo
+ * isDemo:true) — ver la nota del mismo cambio en firestore.rules. Antes de
+ * este cambio, un admin no podía borrar una tarjeta/sticker real por
+ * diseño (solo desactivarla no era una opción disponible, y el historial
+ * quedaba fijo para siempre); ahora sí puede, a pedido explícito de
+ * administración.
+ */
+export async function deleteAccessItem(id, name) {
+  await deleteDoc(doc(db, "access_items", id));
+  await logAudit("access_item.delete", { targetCollection: "access_items", targetId: id, details: { name } });
 }
 
 export async function fetchAccessItemHistory(max = 100, { from = null, to = null } = {}) {

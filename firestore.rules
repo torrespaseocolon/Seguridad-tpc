@@ -126,14 +126,16 @@ service cloud.firestore {
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'viewer');
-      // Solo se puede borrar un registro marcado como demostración (isDemo:
-      // true) — así "Limpiar demostración" puede purgarlos por completo sin
-      // abrir una puerta de borrado para parqueos reales (la auditoría de
-      // datos reales se mantiene intacta e inmutable).
+      // Ago-2026 v2: a pedido explícito de administración, un admin ya puede
+      // borrar CUALQUIER registro (antes solo los marcados isDemo:true —
+      // "Limpiar demostración" los purgaba sin tocar la auditoría real,
+      // que se mantenía intacta e inmutable a propósito). Ahora esa
+      // garantía queda a criterio del administrador: puede reiniciar el
+      // historial real también, por ejemplo desde Administración →
+      // Desarrollador → "Reiniciar datos del sistema".
       allow delete: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-        resource.data.isDemo == true;
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
       // Crear (entrada) y cerrar (salida) solo lo puede hacer el guardia de
       // Lobby B, o un administrador — misma restricción y misma razón que en
@@ -171,12 +173,11 @@ service cloud.firestore {
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'viewer');
-      // Solo se puede borrar un paquete marcado como demostración (isDemo:
-      // true) — ver nota igual en parking_sessions más arriba.
+      // Ago-2026 v2: admin puede borrar cualquier paquete — ver nota igual en
+      // parking_sessions más arriba.
       allow delete: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-        resource.data.isDemo == true;
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
@@ -211,12 +212,11 @@ service cloud.firestore {
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'viewer');
-      // Solo se puede borrar uno marcado como demostración (isDemo: true) —
-      // ver nota igual en parking_sessions más arriba.
+      // Ago-2026 v2: admin puede borrar cualquier objeto encontrado — ver
+      // nota igual en parking_sessions más arriba.
       allow delete: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-        resource.data.isDemo == true;
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
@@ -292,12 +292,11 @@ service cloud.firestore {
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'viewer');
-      // Solo se puede borrar un préstamo marcado como demostración (isDemo:
-      // true) — ver nota igual en parking_sessions más arriba.
+      // Ago-2026 v2: admin puede borrar cualquier préstamo — ver nota igual
+      // en parking_sessions más arriba.
       allow delete: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-        resource.data.isDemo == true;
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
       // Crear un préstamo (guardia): solo de un objeto que pertenezca a SU
       // PROPIO lobby — así se hace cumplir del lado del servidor lo mismo
@@ -340,12 +339,11 @@ service cloud.firestore {
       allow create: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      // Solo se puede borrar una tarjeta/sticker marcado como demostración
-      // (isDemo: true) — ver nota igual en parking_sessions más arriba.
+      // Ago-2026 v2: admin puede borrar cualquier tarjeta/sticker — ver nota
+      // igual en parking_sessions más arriba.
       allow delete: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&
-        resource.data.isDemo == true;
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
 
       allow update: if isSignedIn() && (
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
@@ -362,8 +360,11 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------
-    // audit_logs — inmutable. Cada usuario solo puede crear un registro que
-    // lo identifique a sí mismo; nadie puede editar ni borrar auditoría.
+    // audit_logs — nadie puede EDITAR un registro (integridad de cada
+    // entrada). Ago-2026 v2: a pedido explícito de administración, un admin
+    // sí puede BORRAR registros en bloque (por ejemplo desde
+    // Administración → Desarrollador → "Reiniciar datos del sistema") —
+    // antes esto era "if false" sin ninguna excepción.
     // -------------------------------------------------------------------
     match /audit_logs/{id} {
       allow read: if isSignedIn() &&
@@ -376,7 +377,9 @@ service cloud.firestore {
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
         request.resource.data.userUid == request.auth.uid;
       allow update: if false;
-      allow delete: if false;
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     // -------------------------------------------------------------------
@@ -402,7 +405,11 @@ service cloud.firestore {
       allow update: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow delete: if false;
+      // Ago-2026 v2: admin puede borrar reportes de error — antes era
+      // "if false" sin excepción.
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
     // -------------------------------------------------------------------

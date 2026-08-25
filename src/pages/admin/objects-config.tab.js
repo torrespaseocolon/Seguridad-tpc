@@ -51,6 +51,9 @@ function renderObjectCard(obj, reload) {
     }
   });
 
+  const editBtn = el("button", { class: "btn btn--secondary" }, [icon("tools", { size: 16 }), " Editar"]);
+  editBtn.addEventListener("click", () => openEditModal(obj, reload));
+
   const toggleBtn = el("button", { class: `btn ${obj.active ? "btn--danger" : "btn--success"}` }, obj.active ? "Desactivar" : "Activar");
   toggleBtn.addEventListener("click", async () => {
     try {
@@ -93,8 +96,63 @@ function renderObjectCard(obj, reload) {
     obj.category ? el("div", { class: "text-secondary" }, obj.category) : null,
     obj.identifier ? el("div", { class: "text-faint" }, `Identificador: ${obj.identifier}`) : null,
     el("div", { class: "text-secondary" }, `Disponibles: ${obj.availableQuantity} / ${obj.totalQuantity}`),
-    el("div", { class: "row mt-md", style: "flex-wrap:wrap; gap:8px;" }, [qtyInput, lobbySelect, saveBtn, toggleBtn, deleteBtn]),
+    el("div", { class: "row mt-md", style: "flex-wrap:wrap; gap:8px;" }, [qtyInput, lobbySelect, saveBtn, editBtn, toggleBtn, deleteBtn]),
   ].filter(Boolean));
+}
+
+/** A diferencia del formulario de arriba (cantidad/lobby), esto edita los datos descriptivos del objeto. */
+function openEditModal(obj, reload) {
+  const nameInput = el("input", { class: "form-control", required: true, value: obj.name || "" });
+  const categoryInput = el("input", { class: "form-control", value: obj.category || "" });
+  const identifierInput = el("input", { class: "form-control", value: obj.identifier || "" });
+  const descInput = el("textarea", { class: "form-control", rows: "2" }, obj.description || "");
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "GUARDAR CAMBIOS");
+
+  const form = el(
+    "form",
+    {
+      class: "stack",
+      onsubmit: async (e) => {
+        e.preventDefault();
+        if (!nameInput.value.trim()) {
+          errorBox.textContent = "Ingrese un nombre.";
+          errorBox.style.display = "block";
+          return;
+        }
+        submitBtn.disabled = true;
+        submitBtn.textContent = "GUARDANDO...";
+        try {
+          await updateObject(obj.id, {
+            name: nameInput.value.trim(),
+            category: categoryInput.value.trim(),
+            identifier: identifierInput.value.trim(),
+            description: descInput.value.trim(),
+          });
+          toast("Objeto actualizado.", "success");
+          closeFn();
+          reload();
+        } catch (err) {
+          errorBox.textContent = friendlyError(err);
+          errorBox.style.display = "block";
+          submitBtn.disabled = false;
+          submitBtn.textContent = "GUARDAR CAMBIOS";
+        }
+      },
+    },
+    [
+      el("div", { class: "modal__title" }, "Editar objeto"),
+      field("Nombre *", nameInput),
+      field("Categoría", categoryInput),
+      field("Identificador (opcional)", identifierInput),
+      field("Descripción", descInput),
+      errorBox,
+      submitBtn,
+    ]
+  );
+
+  const closeFn = openModal(form);
+  nameInput.focus();
 }
 
 function openCreateModal(reload) {
