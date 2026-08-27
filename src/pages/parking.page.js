@@ -12,6 +12,7 @@ import {
   OperationError,
 } from "../services/parking.service.js";
 import { createDestinationField } from "../utils/destination-field.js";
+import { destinationLabel, PROVIDER_DESTINATION_TYPE, PROVIDER_DESTINATION_NUMBER } from "../utils/destination.js";
 import { qrImageUrl } from "../utils/qr.js";
 import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
 import { getProfile } from "../services/auth.service.js";
@@ -330,6 +331,17 @@ function openEntryModal(space) {
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
 
+  const categorySelect = el("select", { class: "form-control" }, [
+    el("option", { value: "visitor" }, "Visitante"),
+    el("option", { value: "provider" }, "Proveedor (sin límite de tiempo, no visita una unidad puntual)"),
+  ]);
+  const destFieldWrapper = field("Torre + piso + unidad", destField.input);
+  categorySelect.addEventListener("change", () => {
+    const isProvider = categorySelect.value === "provider";
+    destFieldWrapper.style.display = isProvider ? "none" : "";
+    destField.hint.style.display = isProvider ? "none" : "";
+  });
+
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR ENTRADA");
 
@@ -340,16 +352,25 @@ function openEntryModal(space) {
       onsubmit: async (e) => {
         e.preventDefault();
         errorBox.style.display = "none";
-        const destResult = destField.getResult();
-        if (!destResult.ok) {
-          errorBox.textContent = destResult.error;
-          errorBox.style.display = "block";
-          return;
-        }
-        if (!destResult.type) {
-          errorBox.textContent = "No se pudo determinar automáticamente si es apartamento u oficina/comercio para ese piso (los pisos 2 a 7 de la Torre B son de parqueo interno, sin unidades). Verifique el número.";
-          errorBox.style.display = "block";
-          return;
+        const isProvider = categorySelect.value === "provider";
+        let destinationType, destinationNumber;
+        if (isProvider) {
+          destinationType = PROVIDER_DESTINATION_TYPE;
+          destinationNumber = PROVIDER_DESTINATION_NUMBER;
+        } else {
+          const destResult = destField.getResult();
+          if (!destResult.ok) {
+            errorBox.textContent = destResult.error;
+            errorBox.style.display = "block";
+            return;
+          }
+          if (!destResult.type) {
+            errorBox.textContent = "No se pudo determinar automáticamente si es apartamento u oficina/comercio para ese piso (los pisos 2 a 7 de la Torre B son de parqueo interno, sin unidades). Verifique el número.";
+            errorBox.style.display = "block";
+            return;
+          }
+          destinationType = destResult.type;
+          destinationNumber = destResult.code;
         }
         submitBtn.disabled = true;
         submitBtn.textContent = "GUARDANDO...";
@@ -363,8 +384,8 @@ function openEntryModal(space) {
             visitorId: idInput.value.trim(),
             plate: plateInput.value.trim().toUpperCase(),
             visitorPhone: phoneInput.value.trim(),
-            destinationType: destResult.type,
-            destinationNumber: destResult.code,
+            destinationType,
+            destinationNumber,
             lobbyOverride: "B",
           });
           toast(`Entrada registrada en el parqueo ${space.number}.`, "success");
@@ -383,7 +404,8 @@ function openEntryModal(space) {
       field("Cédula", idInput),
       field("Placa", plateInput),
       field("Teléfono *", phoneInput),
-      field("Torre + piso + unidad", destField.input),
+      field("Categoría", categorySelect),
+      destFieldWrapper,
       destField.hint,
       errorBox,
       submitBtn,
@@ -429,7 +451,7 @@ function openExitModal(space) {
       row("Nombre", space.visitorName),
       row("Cédula", space.visitorId),
       row("Placa", space.plate),
-      row("Destino", `${space.destinationType === "office" ? "Oficina" : "Apartamento"} ${space.destinationNumber || ""}`),
+      row("Destino", destinationLabel(space.destinationType, space.destinationNumber)),
       row("Entrada", formatDateTime(space.entryAt)),
       row("Registrado por", `${space.entryGuardName || ""} (Lobby ${space.entryLobby || "-"})`),
     ]),
@@ -484,6 +506,17 @@ function openMotoEntryModal(space) {
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
 
+  const categorySelect = el("select", { class: "form-control" }, [
+    el("option", { value: "visitor" }, "Visitante"),
+    el("option", { value: "provider" }, "Proveedor (sin límite de tiempo, no visita una unidad puntual)"),
+  ]);
+  const destFieldWrapper = field("Torre + piso + unidad", destField.input);
+  categorySelect.addEventListener("change", () => {
+    const isProvider = categorySelect.value === "provider";
+    destFieldWrapper.style.display = isProvider ? "none" : "";
+    destField.hint.style.display = isProvider ? "none" : "";
+  });
+
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const submitBtn = el("button", { class: "btn btn--primary btn--block btn--lg", type: "submit" }, "REGISTRAR ENTRADA");
 
@@ -494,16 +527,25 @@ function openMotoEntryModal(space) {
       onsubmit: async (e) => {
         e.preventDefault();
         errorBox.style.display = "none";
-        const destResult = destField.getResult();
-        if (!destResult.ok) {
-          errorBox.textContent = destResult.error;
-          errorBox.style.display = "block";
-          return;
-        }
-        if (!destResult.type) {
-          errorBox.textContent = "No se pudo determinar automáticamente si es apartamento u oficina/comercio para ese piso (los pisos 2 a 7 de la Torre B son de parqueo interno, sin unidades). Verifique el número.";
-          errorBox.style.display = "block";
-          return;
+        const isProvider = categorySelect.value === "provider";
+        let destinationType, destinationNumber;
+        if (isProvider) {
+          destinationType = PROVIDER_DESTINATION_TYPE;
+          destinationNumber = PROVIDER_DESTINATION_NUMBER;
+        } else {
+          const destResult = destField.getResult();
+          if (!destResult.ok) {
+            errorBox.textContent = destResult.error;
+            errorBox.style.display = "block";
+            return;
+          }
+          if (!destResult.type) {
+            errorBox.textContent = "No se pudo determinar automáticamente si es apartamento u oficina/comercio para ese piso (los pisos 2 a 7 de la Torre B son de parqueo interno, sin unidades). Verifique el número.";
+            errorBox.style.display = "block";
+            return;
+          }
+          destinationType = destResult.type;
+          destinationNumber = destResult.code;
         }
         submitBtn.disabled = true;
         submitBtn.textContent = "GUARDANDO...";
@@ -513,8 +555,8 @@ function openMotoEntryModal(space) {
             visitorId: idInput.value.trim(),
             plate: plateInput.value.trim().toUpperCase(),
             visitorPhone: phoneInput.value.trim(),
-            destinationType: destResult.type,
-            destinationNumber: destResult.code,
+            destinationType,
+            destinationNumber,
             lobbyOverride: "B",
           });
           toast(`Entrada de moto registrada en el parqueo ${space.number}.`, "success");
@@ -533,7 +575,8 @@ function openMotoEntryModal(space) {
       field("Cédula", idInput),
       field("Placa", plateInput),
       field("Teléfono *", phoneInput),
-      field("Torre + piso + unidad", destField.input),
+      field("Categoría", categorySelect),
+      destFieldWrapper,
       destField.hint,
       errorBox,
       submitBtn,
@@ -577,7 +620,7 @@ function openMotoExitModal(space, session) {
       row("Nombre", session.visitorName),
       row("Cédula", session.visitorId),
       row("Placa", session.plate),
-      row("Destino", `${session.destinationType === "office" ? "Oficina" : "Apartamento"} ${session.destinationNumber || ""}`),
+      row("Destino", destinationLabel(session.destinationType, session.destinationNumber)),
       row("Entrada", formatDateTime(session.entryAt)),
       row("Registrado por", `${session.entryGuardName || ""} (Lobby ${session.entryLobby || "-"})`),
     ]),
@@ -676,7 +719,7 @@ function buildNotifyToggle() {
  * QR no carga o no se puede escanear, el enlace es el respaldo: abre la
  * misma pantalla, que también muestra el código QR.
  */
-function showConsultaQr(spaceNumber, consultaUrl, closeParentModal, contact) {
+export function showConsultaQr(spaceNumber, consultaUrl, closeParentModal, contact) {
   if (closeParentModal) closeParentModal();
   const okBtn = el("button", { class: "btn btn--primary btn--block btn--lg mt-md" }, "LISTO");
   const children = [

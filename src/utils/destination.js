@@ -18,6 +18,20 @@
 export const TOWERS = ["A", "B"];
 export const MAX_FLOOR = 30;
 
+// "provider": categoría especial de Parqueos para proveedores/visitas de
+// administración (ago-2026) — no se le pide torre/piso/unidad (no visita
+// una unidad puntual) y no tiene límite de tiempo ni cuenta para el tope
+// de 3 simultáneos, ver notas en parking.service.js.
+export const PROVIDER_DESTINATION_TYPE = "provider";
+export const PROVIDER_DESTINATION_NUMBER = "ADMINISTRACIÓN";
+
+/** Texto legible para mostrar el destino de un registro, en cualquier pantalla. */
+export function destinationLabel(destinationType, destinationNumber) {
+  if (destinationType === PROVIDER_DESTINATION_TYPE) return "Proveedor / Administración";
+  const kind = destinationType === "office" ? "Oficina" : "Apartamento";
+  return `${kind} ${destinationNumber || ""}`.trim();
+}
+
 /** Deja solo dígitos y quita ceros a la izquierda (pero conserva al menos un dígito). */
 export function normalizeDigits(raw) {
   const digitsOnly = String(raw || "").replace(/\D/g, "");

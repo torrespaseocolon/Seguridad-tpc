@@ -10,6 +10,7 @@ import { downloadCsv } from "../../utils/csv.js";
 import { friendlyError } from "../../utils/errors.js";
 import { barChart, bucketByDay } from "../../utils/chart.js";
 import { createDestinationField } from "../../utils/destination-field.js";
+import { destinationLabel } from "../../utils/destination.js";
 
 const REPORTS = [
   { id: "parking", label: "Parqueos" },
@@ -123,7 +124,7 @@ async function renderParking(content, range) {
   content.appendChild(barChart(bucketByDay(rows, "entryAt")));
   content.appendChild(exportButton("historial_parqueos.csv", rows.map((r) => ({
     parqueo: r.spaceNumber, nombre: r.visitorName, cedula: r.visitorId, placa: r.plate,
-    destino: `${r.destinationType === "office" ? "Oficina" : "Apto"} ${r.destinationNumber}`,
+    destino: destinationLabel(r.destinationType, r.destinationNumber),
     entrada: formatDateTime(r.entryAt), salida: formatDateTime(r.exitAt),
     duracion_min: r.durationMinutes, guardia_entrada: r.entryGuardName, guardia_salida: r.exitGuardName, lobby: r.entryLobby,
   }))));

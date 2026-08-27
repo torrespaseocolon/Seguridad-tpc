@@ -12,6 +12,7 @@ import {
 
 const TILES = [
   { path: "/parqueos", icon: "parking", label: "Parqueos" },
+  { path: "/visitantes", icon: "users", label: "Visitantes" },
   { path: "/paquetes", icon: "package", label: "Paquetes", badgeKey: "packages" },
   { path: "/objetos", icon: "tools", label: "Objetos", badgeKey: "foundItems" },
   { path: "/tarjetas", icon: "card", label: "Tarjetas / Stickers", badgeKey: "accessItems" },

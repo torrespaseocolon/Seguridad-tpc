@@ -9,6 +9,7 @@ import { registerRoute, setRouteGuard, startRouter, navigate, currentPath } from
 
 import { renderHome } from "./pages/home.page.js";
 import { renderParking } from "./pages/parking.page.js";
+import { renderVisits } from "./pages/visits.page.js";
 import { renderPackages } from "./pages/packages.page.js";
 import { renderObjects } from "./pages/objects.page.js";
 import { renderAccessItems } from "./pages/access-items.page.js";
@@ -109,6 +110,7 @@ function updateConnBadge(online) {
 function registerRoutes() {
   registerRoute("/", renderHome);
   registerRoute("/parqueos", renderParking);
+  registerRoute("/visitantes", renderVisits);
   registerRoute("/paquetes", renderPackages);
   registerRoute("/objetos", renderObjects);
   registerRoute("/tarjetas", renderAccessItems);

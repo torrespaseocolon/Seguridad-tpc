@@ -165,6 +165,32 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------
+    // visits — registro general de visitantes (ago-2026), separado de
+    // parking_sessions: no toda visita necesita un espacio de parqueo.
+    // Cuando sí lo necesita, el registro de parking_sessions se crea aparte
+    // con las mismas reglas de arriba (Lobby B o admin) — acá solo se
+    // guarda el enlace a ese registro.
+    // -------------------------------------------------------------------
+    match /visits/{id} {
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'viewer');
+      allow create: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
+        request.resource.data.createdByUid == request.auth.uid;
+      allow update: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow delete: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // -------------------------------------------------------------------
     // packages
     // -------------------------------------------------------------------
     match /packages/{id} {

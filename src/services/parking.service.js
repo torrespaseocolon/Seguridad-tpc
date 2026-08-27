@@ -20,14 +20,21 @@ import { getTimeRules } from "./settings.service.js";
 import { elapsedMinutes } from "../utils/time.js";
 import { isOnline } from "../utils/connectivity.js";
 import { settle } from "../utils/offline-write.js";
+import { PROVIDER_DESTINATION_TYPE } from "../utils/destination.js";
 
 // -----------------------------------------------------------------------
 // Reglas de tiempo máximo por tipo de destino y máximo de parqueos
 // simultáneos por apartamento/oficina: las configura administración desde
 // Administración → Parqueos (ver settings.service.js: getTimeRules() lee un
 // valor en caché, disponible de inmediato aunque no haya conexión).
+//
+// "provider" (proveedores/visitas de administración) es una excepción a
+// propósito: sin límite de tiempo (null, ver el chequeo de "vencido" en
+// parking.page.js — con maxMinutesAtEntry en null nunca se marca vencido)
+// y sin contar para el tope de simultáneos, ver registerEntry más abajo.
 // -----------------------------------------------------------------------
 function maxMinutesForDestination(destinationType) {
+  if (destinationType === PROVIDER_DESTINATION_TYPE) return null;
   const rules = getTimeRules();
   return destinationType === "office" ? rules.maxMinutesOffice : rules.maxMinutesApartment;
 }
@@ -123,8 +130,9 @@ export async function registerEntry(spaceNumber, data) {
   // consulta de red (getDocs), así que solo se hace si hay señal. Sin
   // conexión se omite el chequeo en vez de arriesgarse a que se quede
   // esperando — el guardia ya ve la pantalla "SIN CONEXIÓN" y sabe que está
-  // operando con ese riesgo pequeño y aceptado.
-  if (isOnline()) {
+  // operando con ese riesgo pequeño y aceptado. Proveedores nunca cuentan
+  // para este tope (varios pueden coincidir el mismo día sin bloquearse).
+  if (isOnline() && destinationType !== PROVIDER_DESTINATION_TYPE) {
     // settle() por si "en línea" es un falso positivo (wifi conectado pero
     // sin internet real): en ese caso, en vez de colgarse, se omite el
     // chequeo después de esperar un poco en vez de nunca.
@@ -525,7 +533,7 @@ export async function fetchFrequentVisitorAlerts({ days = 7, minVisits = 3 } = {
   const byKey = new Map();
   for (const d of snap.docs) {
     const s = d.data();
-    if (s.isDemo || !s.plate || !s.destinationNumber) continue;
+    if (s.isDemo || !s.plate || !s.destinationNumber || s.destinationType === PROVIDER_DESTINATION_TYPE) continue;
     const key = `${s.plate}|${s.destinationNumber}`;
     if (!byKey.has(key)) {
       byKey.set(key, {

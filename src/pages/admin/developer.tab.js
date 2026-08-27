@@ -27,7 +27,7 @@ import { firebaseConfig } from "../../firebase/firebase-config.js";
 // Mantener igual al CACHE_NAME de service-worker.js — no hay forma de leerlo
 // automáticamente desde acá (son dos archivos totalmente separados), así que
 // hay que actualizar esta línea a mano cuando se suba una versión nueva.
-const APP_VERSION = "seguridad-tpc-v39";
+const APP_VERSION = "seguridad-tpc-v40";
 
 // public_status queda afuera a propósito: firestore.rules bloquea "list" en
 // esa colección sin excepción (ni siquiera para administración) — solo se
@@ -38,6 +38,7 @@ const APP_VERSION = "seguridad-tpc-v39";
 const BACKUP_COLLECTIONS = [
   "parking_spaces",
   "parking_sessions",
+  "visits",
   "packages",
   "objects",
   "object_loans",
@@ -58,6 +59,7 @@ const BACKUP_COLLECTIONS = [
 // los mismos ID que parking_sessions (se crean siempre en pareja).
 const WIPE_COLLECTIONS = [
   "parking_sessions",
+  "visits",
   "packages",
   "access_items",
   "found_items",

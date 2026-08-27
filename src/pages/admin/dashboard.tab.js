@@ -13,6 +13,7 @@ import {
 import { elapsedMinutes, formatDateTime } from "../../utils/time.js";
 import { friendlyError } from "../../utils/errors.js";
 import { fetchFrequentVisitorAlerts } from "../../services/parking.service.js";
+import { destinationLabel } from "../../utils/destination.js";
 
 export async function renderDashboardTab(root) {
   clear(root);
@@ -117,7 +118,7 @@ function frequentVisitorsCard(alerts) {
       el("div", { class: "card row row--between", style: "border-color:var(--color-warning);" }, [
         el("div", {}, [
           el("div", { style: "font-weight:700;" }, a.plate),
-          el("div", { class: "text-secondary" }, `${a.destinationType === "office" ? "Oficina" : "Apartamento"} ${a.destinationNumber} · última vez: ${formatDateTime(a.lastEntry)}`),
+          el("div", { class: "text-secondary" }, `${destinationLabel(a.destinationType, a.destinationNumber)} · última vez: ${formatDateTime(a.lastEntry)}`),
         ]),
         el("span", { class: "badge badge--warning" }, `${a.count} veces esta semana`),
       ])
