@@ -11,8 +11,8 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 
 const TILES = [
-  { path: "/parqueos", icon: "parking", label: "Parqueos" },
   { path: "/visitantes", icon: "users", label: "Visitantes" },
+  { path: "/parqueos", icon: "parking", label: "Parqueos" },
   { path: "/paquetes", icon: "package", label: "Paquetes", badgeKey: "packages" },
   { path: "/objetos", icon: "tools", label: "Objetos", badgeKey: "foundItems" },
   { path: "/tarjetas", icon: "card", label: "Tarjetas / Stickers", badgeKey: "accessItems" },

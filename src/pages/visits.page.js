@@ -1,10 +1,10 @@
 import { el, clear, toast, openModal, loadingState, emptyState } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
 import { db } from "../firebase/firebase-init.js";
-import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
+import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { destinationLabel } from "../utils/destination.js";
-import { registerEntry, OperationError } from "../services/parking.service.js";
+import { registerEntry, registerMotoEntry, MOTO_SPACE_CAPACITY, OperationError } from "../services/parking.service.js";
 import { createVisit, fetchRecentVisits } from "../services/visits.service.js";
 import { getProfile } from "../services/auth.service.js";
 import { formatDateTime } from "../utils/time.js";
@@ -62,10 +62,14 @@ function renderVisitCard(v) {
       el("strong", {}, v.visitorName),
       v.needsParking
         ? el("span", { class: "badge badge--info" }, `Parqueo ${v.parkingSpaceNumber || "?"}`)
-        : el("span", { class: "badge badge--free" }, "Parquea en su propio espacio"),
+        : el("span", { class: "badge badge--free" }, "No necesita parqueo"),
     ]),
     el("div", { class: "text-secondary" }, `${destinationLabel(v.destinationType, v.destinationNumber)} · Cédula ${v.visitorId} · Tel. ${v.visitorPhone || "-"}`),
-    el("div", { class: "text-faint" }, `${formatDateTime(v.createdAt)} · ${v.createdByName || ""}`),
+    el("div", { class: "row row--between", style: "padding-top:4px;" }, [
+      el("span", { class: "text-secondary" }, "Entrada"),
+      el("strong", {}, formatDateTime(v.createdAt)),
+    ]),
+    el("div", { class: "text-faint" }, v.createdByName || ""),
     v.notes ? el("div", { class: "text-faint" }, v.notes) : null,
   ].filter(Boolean));
 }
@@ -105,7 +109,7 @@ function openNewVisitModal(reload) {
     };
   }
 
-  const noParkingBtn = el("button", { class: "btn btn--secondary btn--block btn--lg" }, [icon("card", { size: 18 }), " PARQUEA EN SU PROPIO ESPACIO"]);
+  const noParkingBtn = el("button", { class: "btn btn--secondary btn--block btn--lg" }, [icon("card", { size: 18 }), " NO NECESITA PARQUEO"]);
   noParkingBtn.addEventListener("click", async () => {
     const data = collectVisitorData();
     if (!data) return;
@@ -169,17 +173,38 @@ function openAssignSpaceModal(visitorData, reload) {
       // distintos) para no depender de un índice compuesto — mismo patrón
       // que demo.tab.js.
       const snap = await getDocs(collection(db, "parking_spaces"));
-      const free = snap.docs
-        .map((d) => d.data())
+      const allSpaces = snap.docs.map((d) => d.data());
+      const options = allSpaces
         .filter((s) => s.type === "visitor" && s.status === "free")
-        .sort((a, b) => String(a.number).localeCompare(String(b.number)));
+        .map((s) => ({ ...s, vehicleKind: "car" }));
+
+      // El espacio de motos nunca marca su propio documento como
+      // "ocupado" (ver nota de motos en parking.service.js) — la
+      // disponibilidad real se calcula contando cuántas sesiones de moto
+      // siguen abiertas para ese espacio, igual que en Parqueos.
+      for (const space of allSpaces.filter((s) => s.type === "moto")) {
+        const capacity = space.capacity || MOTO_SPACE_CAPACITY;
+        const openSnap = await getDocs(
+          query(collection(db, "parking_sessions"), where("status", "==", "open"), where("spaceNumber", "==", space.number))
+        );
+        const occupied = openSnap.size;
+        if (occupied < capacity) {
+          options.push({ ...space, vehicleKind: "moto", motoOccupied: occupied, motoCapacity: capacity });
+        }
+      }
+      options.sort((a, b) => String(a.number).localeCompare(String(b.number)));
+
       clear(spaceListBox);
-      if (free.length === 0) {
+      if (options.length === 0) {
         spaceListBox.appendChild(emptyState("parking", "No hay parqueos de visitante libres en este momento."));
         return;
       }
-      for (const space of free) {
-        const row = el("div", { class: "card", style: "cursor:pointer; border-width:2px;" }, `Parqueo ${space.number}`);
+      for (const space of options) {
+        const label =
+          space.vehicleKind === "moto"
+            ? `Parqueo ${space.number} — Moto (${space.motoOccupied}/${space.motoCapacity} ocupadas)`
+            : `Parqueo ${space.number}`;
+        const row = el("div", { class: "card", style: "cursor:pointer; border-width:2px;" }, label);
         row.addEventListener("click", () => {
           selectedSpace = space;
           confirmBtn.disabled = false;
@@ -205,7 +230,9 @@ function openAssignSpaceModal(visitorData, reload) {
     confirmBtn.disabled = true;
     confirmBtn.textContent = "GUARDANDO...";
     try {
-      const result = await registerEntry(selectedSpace.number, {
+      const isMoto = selectedSpace.vehicleKind === "moto";
+      const entryFn = isMoto ? registerMotoEntry : registerEntry;
+      const result = await entryFn(selectedSpace.number, {
         visitorName: visitorData.visitorName,
         visitorId: visitorData.visitorId,
         plate: plateInput.value.trim().toUpperCase(),
@@ -220,8 +247,9 @@ function openAssignSpaceModal(visitorData, reload) {
         parkingSpaceNumber: selectedSpace.number,
         parkingSessionId: result.sessionId,
       });
-      toast(`Visita registrada. Entrada en el parqueo ${selectedSpace.number}.`, "success");
-      showConsultaQr(selectedSpace.number, result.consultaUrl, closeFn, { name: visitorData.visitorName, phone: visitorData.visitorPhone });
+      const spaceLabel = isMoto ? `${selectedSpace.number} (moto)` : selectedSpace.number;
+      toast(`Visita registrada. Entrada en el parqueo ${spaceLabel}.`, "success");
+      showConsultaQr(spaceLabel, result.consultaUrl, closeFn, { name: visitorData.visitorName, phone: visitorData.visitorPhone });
       reload();
     } catch (err) {
       errorBox.textContent = err instanceof OperationError ? err.message : friendlyError(err);
