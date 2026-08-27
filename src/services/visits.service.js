@@ -12,6 +12,7 @@ import {
   setDoc,
   updateDoc,
   query,
+  where,
   orderBy,
   limit as fbLimit,
   getDocs,
@@ -70,6 +71,16 @@ export async function markVisitExited(id) {
 
 export async function fetchRecentVisits(max = 100) {
   const q = query(collection(db, "visits"), orderBy("createdAt", "desc"), fbLimit(max));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/** Búsqueda por rango de fecha (una sola condición, no necesita índice compuesto) — mismo patrón que fetchParkingHistory. */
+export async function fetchVisitHistory({ max = 300, from = null, to = null } = {}) {
+  const clauses = [];
+  if (from) clauses.push(where("createdAt", ">=", from));
+  if (to) clauses.push(where("createdAt", "<=", to));
+  const q = query(collection(db, "visits"), ...clauses, orderBy("createdAt", "desc"), fbLimit(max));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }

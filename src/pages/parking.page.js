@@ -1,4 +1,4 @@
-import { el, clear, toast, confirmDialog, openModal } from "../utils/dom.js";
+import { el, clear, toast, confirmDialog, openModal, loadingState, emptyState } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
 import {
   subscribeParkingSpaces,
@@ -9,16 +9,18 @@ import {
   registerMotoExit,
   MOTO_SPACE_CAPACITY,
   buildConsultaUrl,
+  fetchParkingHistory,
   OperationError,
 } from "../services/parking.service.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { destinationLabel, PROVIDER_DESTINATION_TYPE, PROVIDER_DESTINATION_NUMBER } from "../utils/destination.js";
 import { qrImageUrl } from "../utils/qr.js";
-import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime } from "../utils/time.js";
+import { formatElapsed, elapsedMinutes, startLocalTicker, formatDateTime, formatMinutesDuration } from "../utils/time.js";
 import { getProfile } from "../services/auth.service.js";
 import { navigate } from "../router.js";
 import { notificationsSupported, getPermission, isEnabled, enable, disable, notify } from "../utils/notify.js";
 import { whatsappLink } from "../utils/whatsapp.js";
+import { friendlyError } from "../utils/errors.js";
 
 // La entrada física de los parqueos de visita está solo en Lobby B (ver
 // commit "Poner Lobby B primero en el selector de lobby"). Por eso, desde
@@ -51,6 +53,12 @@ export function renderParking(root) {
     ])
   );
 
+  const searchInput = el("input", { class: "form-control", placeholder: "Buscar por nombre, cédula, placa o apartamento..." });
+  root.appendChild(el("div", { class: "form-group mb-md" }, [searchInput]));
+  searchInput.addEventListener("input", () => renderGrid());
+
+  root.appendChild(buildHistorySearch());
+
   const grid = el("div", { class: "parking-grid" });
   root.appendChild(grid);
 
@@ -64,8 +72,19 @@ export function renderParking(root) {
   const motoWidgets = new Map();
 
   function renderGrid() {
+    const term = searchInput.value.trim().toLowerCase();
     const motoSpaces = spaces.filter((s) => s.type === "moto");
-    const normalSpaces = spaces.filter((s) => s.type !== "moto");
+    let normalSpaces = spaces.filter((s) => s.type !== "moto");
+    if (term) {
+      normalSpaces = normalSpaces.filter(
+        (s) =>
+          s.status === "occupied" &&
+          ((s.visitorName || "").toLowerCase().includes(term) ||
+            (s.visitorId || "").toLowerCase().includes(term) ||
+            (s.plate || "").toLowerCase().includes(term) ||
+            (s.destinationNumber || "").toLowerCase().includes(term))
+      );
+    }
 
     clear(grid);
     for (const space of motoSpaces) {
@@ -75,6 +94,11 @@ export function renderParking(root) {
       grid.appendChild(motoWidgets.get(space.number).el);
     }
     for (const space of normalSpaces) grid.appendChild(renderSpaceCard(space));
+    if (term && normalSpaces.length === 0) {
+      const notice = emptyState("parking", "Ningún parqueo de carro coincide con la búsqueda.");
+      notice.style.gridColumn = "1 / -1";
+      grid.appendChild(notice);
+    }
 
     for (const [number, widget] of motoWidgets) {
       if (!motoSpaces.some((s) => s.number === number)) {
@@ -662,6 +686,101 @@ function openMotoExitModal(space, session) {
       }
     });
   }
+}
+
+/**
+ * Panel colapsable para buscar en el HISTORIAL de parqueos (registros ya
+ * cerrados) por nombre, cédula, placa o apartamento, con filtro opcional de
+ * fecha — a diferencia del buscador de arriba (que filtra la cuadrícula EN
+ * VIVO, solo lo que está ocupado ahora mismo). Cualquier guardia puede
+ * usarlo: no necesita entrar a Administración → Reportes (esa pantalla es
+ * solo para administradores).
+ */
+function buildHistorySearch() {
+  const toggleBtn = el("button", { class: "btn btn--secondary btn--block mb-md" }, [icon("activity", { size: 18 }), " Buscar en historial de parqueos"]);
+  const panel = el("div", { class: "card mb-md", style: "display:none;" });
+  const wrapper = el("div", {}, [toggleBtn, panel]);
+
+  const searchInput = el("input", { class: "form-control", placeholder: "Buscar por nombre, cédula, placa o apartamento..." });
+  const fromInput = el("input", { class: "form-control", type: "date" });
+  const toInput = el("input", { class: "form-control", type: "date" });
+  const clearBtn = el("button", { class: "btn btn--secondary" }, "Quitar filtros");
+  const list = el("div", { class: "stack" });
+
+  panel.appendChild(el("div", { class: "card__title" }, "Historial de parqueos"));
+  panel.appendChild(field("Nombre, cédula, placa o apartamento", searchInput));
+  panel.appendChild(
+    el("div", { class: "row", style: "flex-wrap:wrap; gap:12px;" }, [
+      field("Desde", fromInput),
+      field("Hasta", toInput),
+      el("div", { style: "align-self:flex-end;" }, [clearBtn]),
+    ])
+  );
+  panel.appendChild(el("div", { class: "form-hint mb-md" }, "Sin fechas se muestran los registros más recientes."));
+  panel.appendChild(list);
+
+  let allRows = [];
+  let loaded = false;
+
+  function renderList() {
+    clear(list);
+    const term = searchInput.value.trim().toLowerCase();
+    const filtered = term
+      ? allRows.filter(
+          (r) =>
+            (r.visitorName || "").toLowerCase().includes(term) ||
+            (r.visitorId || "").toLowerCase().includes(term) ||
+            (r.plate || "").toLowerCase().includes(term) ||
+            (r.destinationNumber || "").toLowerCase().includes(term)
+        )
+      : allRows;
+    if (filtered.length === 0) {
+      list.appendChild(emptyState("parking", allRows.length === 0 ? "Sin registros en el historial." : "Ningún registro coincide con la búsqueda."));
+      return;
+    }
+    for (const r of filtered) {
+      list.appendChild(
+        el("div", { class: "card" }, [
+          el("div", { class: "row row--between" }, [el("strong", {}, `Parqueo ${r.spaceNumber} — ${r.plate || ""}`), el("span", { class: "text-faint" }, `Lobby ${r.entryLobby || "-"}`)]),
+          el("div", { class: "text-secondary" }, `${r.visitorName || ""} · Cédula ${r.visitorId || "-"} · ${destinationLabel(r.destinationType, r.destinationNumber)}`),
+          el("div", { class: "text-faint" }, `${formatDateTime(r.entryAt)} → ${formatDateTime(r.exitAt)} (${formatMinutesDuration(r.durationMinutes)})`),
+        ])
+      );
+    }
+  }
+
+  async function load() {
+    clear(list);
+    list.appendChild(loadingState());
+    try {
+      const from = fromInput.value ? new Date(`${fromInput.value}T00:00:00`) : null;
+      const to = toInput.value ? new Date(`${toInput.value}T23:59:59.999`) : null;
+      allRows = await fetchParkingHistory({ max: from || to ? 500 : 100, from, to });
+      loaded = true;
+      renderList();
+    } catch (err) {
+      clear(list);
+      list.appendChild(emptyState("warning", friendlyError(err)));
+    }
+  }
+
+  searchInput.addEventListener("input", renderList);
+  fromInput.addEventListener("change", load);
+  toInput.addEventListener("change", load);
+  clearBtn.addEventListener("click", () => {
+    searchInput.value = "";
+    fromInput.value = "";
+    toInput.value = "";
+    load();
+  });
+
+  toggleBtn.addEventListener("click", () => {
+    const open = panel.style.display === "none";
+    panel.style.display = open ? "" : "none";
+    if (open && !loaded) load();
+  });
+
+  return wrapper;
 }
 
 /**

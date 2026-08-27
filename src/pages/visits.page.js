@@ -5,7 +5,7 @@ import { collection, query, where, getDocs } from "https://www.gstatic.com/fireb
 import { createDestinationField } from "../utils/destination-field.js";
 import { destinationLabel } from "../utils/destination.js";
 import { registerEntry, registerMotoEntry, registerVisitExit, MOTO_SPACE_CAPACITY, OperationError } from "../services/parking.service.js";
-import { createVisit, markVisitExited, fetchRecentVisits } from "../services/visits.service.js";
+import { createVisit, markVisitExited, fetchRecentVisits, fetchVisitHistory } from "../services/visits.service.js";
 import { getProfile } from "../services/auth.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
@@ -33,25 +33,70 @@ export function renderVisits(root) {
   root.appendChild(
     el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openNewVisitModal(load) }, [icon("plus", { size: 18 }), " NUEVO VISITANTE"])
   );
+
+  const searchInput = el("input", { class: "form-control", placeholder: "Buscar por nombre, cédula o apartamento..." });
+  const fromInput = el("input", { class: "form-control", type: "date" });
+  const toInput = el("input", { class: "form-control", type: "date" });
+  const clearFiltersBtn = el("button", { class: "btn btn--secondary" }, "Quitar filtros");
+  root.appendChild(
+    el("div", { class: "card mb-md" }, [
+      el("div", { class: "card__title" }, "Buscar"),
+      field("Nombre, cédula o apartamento", searchInput),
+      el("div", { class: "row", style: "flex-wrap:wrap; gap:12px;" }, [
+        field("Desde", fromInput),
+        field("Hasta", toInput),
+        el("div", { style: "align-self:flex-end;" }, [clearFiltersBtn]),
+      ]),
+      el("div", { class: "form-hint" }, "Sin fechas se muestran las visitas más recientes."),
+    ])
+  );
+
   const list = el("div", { class: "stack" });
   root.appendChild(list);
+
+  let allVisits = [];
+
+  function renderList() {
+    clear(list);
+    const term = searchInput.value.trim().toLowerCase();
+    const filtered = term
+      ? allVisits.filter(
+          (v) =>
+            (v.visitorName || "").toLowerCase().includes(term) ||
+            (v.visitorId || "").toLowerCase().includes(term) ||
+            (v.destinationNumber || "").toLowerCase().includes(term)
+        )
+      : allVisits;
+    if (filtered.length === 0) {
+      list.appendChild(emptyState("users", allVisits.length === 0 ? "Aún no hay visitas registradas." : "Ninguna visita coincide con la búsqueda."));
+      return;
+    }
+    for (const v of filtered) list.appendChild(renderVisitCard(v, load));
+  }
 
   async function load() {
     clear(list);
     list.appendChild(loadingState());
     try {
-      const visits = await fetchRecentVisits(50);
-      clear(list);
-      if (visits.length === 0) {
-        list.appendChild(emptyState("users", "Aún no hay visitas registradas."));
-        return;
-      }
-      for (const v of visits) list.appendChild(renderVisitCard(v, load));
+      const from = fromInput.value ? new Date(`${fromInput.value}T00:00:00`) : null;
+      const to = toInput.value ? new Date(`${toInput.value}T23:59:59.999`) : null;
+      allVisits = from || to ? await fetchVisitHistory({ from, to, max: 300 }) : await fetchRecentVisits(50);
+      renderList();
     } catch (err) {
       clear(list);
       list.appendChild(emptyState("warning", friendlyError(err)));
     }
   }
+
+  searchInput.addEventListener("input", renderList);
+  fromInput.addEventListener("change", load);
+  toInput.addEventListener("change", load);
+  clearFiltersBtn.addEventListener("click", () => {
+    searchInput.value = "";
+    fromInput.value = "";
+    toInput.value = "";
+    load();
+  });
 
   load();
 }
