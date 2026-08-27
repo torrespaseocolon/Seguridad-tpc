@@ -1,11 +1,11 @@
-import { el, clear, toast, openModal, loadingState, emptyState } from "../utils/dom.js";
+import { el, clear, toast, openModal, confirmDialog, loadingState, emptyState } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
 import { db } from "../firebase/firebase-init.js";
 import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { destinationLabel } from "../utils/destination.js";
-import { registerEntry, registerMotoEntry, MOTO_SPACE_CAPACITY, OperationError } from "../services/parking.service.js";
-import { createVisit, fetchRecentVisits } from "../services/visits.service.js";
+import { registerEntry, registerMotoEntry, registerVisitExit, MOTO_SPACE_CAPACITY, OperationError } from "../services/parking.service.js";
+import { createVisit, markVisitExited, fetchRecentVisits } from "../services/visits.service.js";
 import { getProfile } from "../services/auth.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
@@ -46,7 +46,7 @@ export function renderVisits(root) {
         list.appendChild(emptyState("users", "Aún no hay visitas registradas."));
         return;
       }
-      for (const v of visits) list.appendChild(renderVisitCard(v));
+      for (const v of visits) list.appendChild(renderVisitCard(v, load));
     } catch (err) {
       clear(list);
       list.appendChild(emptyState("warning", friendlyError(err)));
@@ -56,19 +56,59 @@ export function renderVisits(root) {
   load();
 }
 
-function renderVisitCard(v) {
+function renderVisitCard(v, reload) {
+  const canOperate = canOperateParking(getProfile());
+  const canRegisterExit = v.needsParking && v.parkingSessionId && !v.exitAt && canOperate;
+
+  let exitBtn = null;
+  if (canRegisterExit) {
+    exitBtn = el("button", { class: "btn btn--danger", style: "min-height:32px; padding:4px 10px; font-size:13px;" }, "SALIDA");
+    exitBtn.addEventListener("click", async () => {
+      const ok = await confirmDialog({
+        title: "Confirmar salida",
+        body: `¿Confirma la salida de ${v.visitorName} (parqueo ${v.parkingSpaceNumber})? El espacio quedará disponible de inmediato.`,
+        confirmText: "Sí, registrar salida",
+        danger: true,
+      });
+      if (!ok) return;
+      exitBtn.disabled = true;
+      try {
+        const result = await registerVisitExit(v.parkingSessionId, v.parkingSpaceNumber);
+        await markVisitExited(v.id);
+        toast(result.alreadyClosed ? "Esa salida ya estaba registrada." : "Salida registrada.", "success");
+        reload();
+      } catch (err) {
+        toast(friendlyError(err), "danger");
+        exitBtn.disabled = false;
+      }
+    });
+  }
+
   return el("div", { class: "card" }, [
     el("div", { class: "row row--between" }, [
       el("strong", {}, v.visitorName),
-      v.needsParking
-        ? el("span", { class: "badge badge--info" }, `Parqueo ${v.parkingSpaceNumber || "?"}`)
-        : el("span", { class: "badge badge--free" }, "No necesita parqueo"),
+      el(
+        "div",
+        { class: "row", style: "gap:8px; align-items:center;" },
+        [
+          v.needsParking
+            ? el("span", { class: "badge badge--info" }, `Parqueo ${v.parkingSpaceNumber || "?"}`)
+            : el("span", { class: "badge badge--free" }, "No necesita parqueo"),
+          exitBtn,
+        ].filter(Boolean)
+      ),
     ]),
     el("div", { class: "text-secondary" }, `${destinationLabel(v.destinationType, v.destinationNumber)} · Cédula ${v.visitorId} · Tel. ${v.visitorPhone || "-"}`),
     el("div", { class: "row row--between", style: "padding-top:4px;" }, [
       el("span", { class: "text-secondary" }, "Entrada"),
       el("strong", {}, formatDateTime(v.createdAt)),
     ]),
+    v.exitAt
+      ? el("div", { class: "row row--between" }, [
+          el("span", { class: "text-secondary" }, "Salida"),
+          el("strong", {}, formatDateTime(v.exitAt)),
+        ])
+      : null,
     el("div", { class: "text-faint" }, v.createdByName || ""),
     v.notes ? el("div", { class: "text-faint" }, v.notes) : null,
   ].filter(Boolean));

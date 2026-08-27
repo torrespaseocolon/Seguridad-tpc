@@ -421,6 +421,53 @@ export async function registerMotoExit(sessionId, entryAt) {
   return { ok: true };
 }
 
+/**
+ * Registra la salida de una visita con parqueo asignado, desde la pantalla
+ * de Visitantes. A diferencia de registerExit (que asume que la pantalla de
+ * Parqueos ya tiene el estado EN VIVO del espacio, gracias a su listener),
+ * acá no hay esa garantía: la visita pudo haber salido ya desde Parqueos
+ * (otro guardia), o el espacio pudo haberse reasignado a otro vehículo
+ * mientras tanto. Por eso relee el estado real antes de tocar nada, en vez
+ * de confiar en lo que la pantalla de Visitantes tenía guardado.
+ */
+export async function registerVisitExit(sessionId, spaceNumber) {
+  const profile = getProfile();
+  const sessionSnap = await getDoc(doc(db, "parking_sessions", sessionId));
+  if (!sessionSnap.exists() || sessionSnap.data().status !== "open") {
+    return { alreadyClosed: true };
+  }
+  const session = sessionSnap.data();
+
+  if (session.vehicleKind === "moto") {
+    await registerMotoExit(sessionId, session.entryAt);
+    return { alreadyClosed: false };
+  }
+
+  const spaceSnap = await getDoc(doc(db, "parking_spaces", spaceNumber));
+  const space = spaceSnap.exists() ? spaceSnap.data() : null;
+  if (space && space.sessionId === sessionId) {
+    await registerExit(spaceNumber, sessionId, session.entryAt);
+  } else {
+    // El espacio ya no pertenece a esta sesión (se liberó o se reasignó
+    // desde Parqueos mientras tanto) — se cierra solo el registro, sin
+    // tocar el espacio de otro vehículo (mismo criterio que
+    // closeOpenSessionsForDestination más abajo).
+    const exitAtValue = new Date();
+    await updateDoc(doc(db, "parking_sessions", sessionId), {
+      status: "closed",
+      exitAt: exitAtValue,
+      exitGuardUid: profile.uid,
+      exitGuardName: profile.name,
+      exitLobby: profile.lobby || null,
+      durationMinutes: elapsedMinutes(session.entryAt),
+      corrected: true,
+      correctionNote: "Cerrado desde Visitantes (el espacio ya había sido liberado o reasignado).",
+    });
+    await setDoc(doc(db, "public_status", sessionId), { status: "closed", exitAt: exitAtValue }, { merge: true });
+  }
+  return { alreadyClosed: false };
+}
+
 /** Solo administración: libera un espacio manualmente (corrección de un error operativo). */
 export async function forceReleaseSpace(spaceNumber, note) {
   const spaceRef = doc(db, "parking_spaces", spaceNumber);

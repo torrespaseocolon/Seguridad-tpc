@@ -160,7 +160,11 @@ service cloud.firestore {
          resource.data.status == 'open' &&
          request.resource.data.status == 'closed' &&
          request.resource.data.exitGuardUid == request.auth.uid &&
-         unchangedExcept(['status', 'exitAt', 'exitGuardUid', 'exitGuardName', 'exitLobby', 'durationMinutes']))
+         // 'corrected'/'correctionNote' se agregaron acá (ago-2026) para que
+         // registerVisitExit() (Visitantes) pueda cerrar un registro
+         // "huérfano" —cuyo espacio ya fue liberado o reasignado a otro
+         // vehículo mientras tanto— dejando una nota, sin necesitar admin.
+         unchangedExcept(['status', 'exitAt', 'exitGuardUid', 'exitGuardName', 'exitLobby', 'durationMinutes', 'corrected', 'correctionNote']))
       );
     }
 
@@ -182,9 +186,20 @@ service cloud.firestore {
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard') &&
         request.resource.data.createdByUid == request.auth.uid;
-      allow update: if isSignedIn() &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      // El guardia de Lobby B (o admin) puede marcar la hora de salida del
+      // condominio de una visita que registró él mismo, desde la pantalla
+      // de Visitantes — mismo criterio de "solo Lobby B" que en
+      // parking_spaces/parking_sessions más arriba. Solo puede tocar el
+      // campo exitAt, nada más.
+      allow update: if isSignedIn() && (
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lobby == 'B' &&
+         unchangedExcept(['exitAt']))
+      );
       allow delete: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';

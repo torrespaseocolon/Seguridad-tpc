@@ -10,6 +10,7 @@ import {
   collection,
   doc,
   setDoc,
+  updateDoc,
   query,
   orderBy,
   limit as fbLimit,
@@ -53,6 +54,18 @@ export async function createVisit({
   );
   logAudit("visit.create", { targetCollection: "visits", targetId: ref.id, details: { visitorName, destinationNumber, needsParking } });
   return ref.id;
+}
+
+/**
+ * Marca en el propio registro de la visita la hora en que salió del
+ * condominio — separado del cierre del parqueo en sí (parking_sessions),
+ * que ya queda registrado por registerVisitExit() en parking.service.js.
+ * Así el registro de Visitantes muestra la salida sin tener que cruzar con
+ * el historial de Parqueos.
+ */
+export async function markVisitExited(id) {
+  await settle(updateDoc(doc(db, "visits", id), { exitAt: new Date() }));
+  logAudit("visit.exit", { targetCollection: "visits", targetId: id });
 }
 
 export async function fetchRecentVisits(max = 100) {
