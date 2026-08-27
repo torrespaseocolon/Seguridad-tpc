@@ -79,7 +79,7 @@ export async function updateAccessItem(id, patch) {
  * administración.
  */
 export async function deleteAccessItem(id, name) {
-  await deleteDoc(doc(db, "access_items", id));
+  await settle(deleteDoc(doc(db, "access_items", id)));
   await logAudit("access_item.delete", { targetCollection: "access_items", targetId: id, details: { name } });
 }
 

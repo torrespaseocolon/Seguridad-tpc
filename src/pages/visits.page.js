@@ -1,7 +1,7 @@
 import { el, clear, toast, openModal, loadingState, emptyState } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
 import { db } from "../firebase/firebase-init.js";
-import { collection, query, where, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
+import { collection, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { destinationLabel } from "../utils/destination.js";
 import { registerEntry, OperationError } from "../services/parking.service.js";
@@ -165,8 +165,14 @@ function openAssignSpaceModal(visitorData, reload) {
     clear(spaceListBox);
     spaceListBox.appendChild(loadingState());
     try {
-      const snap = await getDocs(query(collection(db, "parking_spaces"), where("status", "==", "free"), orderBy("number")));
-      const free = snap.docs.map((d) => d.data()).filter((s) => s.type === "visitor");
+      // Trae todos los espacios y filtra en JS (no where+orderBy en campos
+      // distintos) para no depender de un índice compuesto — mismo patrón
+      // que demo.tab.js.
+      const snap = await getDocs(collection(db, "parking_spaces"));
+      const free = snap.docs
+        .map((d) => d.data())
+        .filter((s) => s.type === "visitor" && s.status === "free")
+        .sort((a, b) => String(a.number).localeCompare(String(b.number)));
       clear(spaceListBox);
       if (free.length === 0) {
         spaceListBox.appendChild(emptyState("parking", "No hay parqueos de visitante libres en este momento."));
