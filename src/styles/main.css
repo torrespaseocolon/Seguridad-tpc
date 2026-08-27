@@ -473,6 +473,7 @@ select.form-control { appearance: none; }
 .space-card--overdue { background: var(--color-danger-bg); border-color: var(--color-danger); box-shadow: 0 0 0 3px rgba(198,40,40,0.15); }
 .space-card--disability { background: var(--color-disability-bg); border-color: rgba(106,62,161,0.25); }
 .space-card--disabled { background: var(--color-disabled-bg); opacity: 0.75; cursor: not-allowed; }
+.space-card--search-match { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(47,102,144,0.25); }
 
 /* =========================================================================
    Responsive: pantallas grandes aprovechan mejor el espacio

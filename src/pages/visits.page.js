@@ -24,32 +24,39 @@ function canOperateParking(profile) {
 
 export function renderVisits(root) {
   clear(root);
-  root.appendChild(
-    el("div", { class: "back-bar" }, [
-      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
-      el("h2", { class: "row" }, [icon("users"), "Visitantes"]),
-    ])
-  );
-  root.appendChild(
-    el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openNewVisitModal(load) }, [icon("plus", { size: 18 }), " NUEVO VISITANTE"])
-  );
 
   const searchInput = el("input", { class: "form-control", placeholder: "Buscar por nombre, cédula o apartamento..." });
   const fromInput = el("input", { class: "form-control", type: "date" });
   const toInput = el("input", { class: "form-control", type: "date" });
   const clearFiltersBtn = el("button", { class: "btn btn--secondary" }, "Quitar filtros");
+  const searchPanel = el("div", { class: "card mb-md", style: "display:none;" }, [
+    el("div", { class: "card__title" }, "Buscar"),
+    field("Nombre, cédula o apartamento", searchInput),
+    el("div", { class: "row", style: "flex-wrap:wrap; gap:12px;" }, [
+      field("Desde", fromInput),
+      field("Hasta", toInput),
+      el("div", { style: "align-self:flex-end;" }, [clearFiltersBtn]),
+    ]),
+    el("div", { class: "form-hint" }, "Sin fechas se muestran las visitas más recientes."),
+  ]);
+  const searchToggleBtn = el("button", { class: "theme-toggle", type: "button", title: "Buscar visitas" }, [icon("search", { size: 20 })]);
+  searchToggleBtn.addEventListener("click", () => {
+    const open = searchPanel.style.display === "none";
+    searchPanel.style.display = open ? "" : "none";
+    if (open) searchInput.focus();
+  });
+
   root.appendChild(
-    el("div", { class: "card mb-md" }, [
-      el("div", { class: "card__title" }, "Buscar"),
-      field("Nombre, cédula o apartamento", searchInput),
-      el("div", { class: "row", style: "flex-wrap:wrap; gap:12px;" }, [
-        field("Desde", fromInput),
-        field("Hasta", toInput),
-        el("div", { style: "align-self:flex-end;" }, [clearFiltersBtn]),
-      ]),
-      el("div", { class: "form-hint" }, "Sin fechas se muestran las visitas más recientes."),
+    el("div", { class: "back-bar" }, [
+      el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
+      el("h2", { class: "row", style: "flex:1; min-width:0;" }, [icon("users"), "Visitantes"]),
+      el("div", { class: "row", style: "flex-shrink:0;" }, [searchToggleBtn]),
     ])
   );
+  root.appendChild(
+    el("button", { class: "btn btn--primary btn--block mb-md", onclick: () => openNewVisitModal(load) }, [icon("plus", { size: 18 }), " NUEVO VISITANTE"])
+  );
+  root.appendChild(searchPanel);
 
   const list = el("div", { class: "stack" });
   root.appendChild(list);

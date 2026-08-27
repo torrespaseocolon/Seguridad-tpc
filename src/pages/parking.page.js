@@ -41,23 +41,51 @@ const TYPE_BADGE = {
   disabled: { icon: null, text: "FUERA DE SERVICIO", cls: "badge--disabled" },
 };
 
+/** Usado tanto por la búsqueda en vivo de la cuadrícula como por el historial — mismos 4 campos en ambos. */
+function matchesSearchTerm(term, data) {
+  return (
+    (data.visitorName || "").toLowerCase().includes(term) ||
+    (data.visitorId || "").toLowerCase().includes(term) ||
+    (data.plate || "").toLowerCase().includes(term) ||
+    (data.destinationNumber || "").toLowerCase().includes(term)
+  );
+}
+
+/** Botón cuadrado pequeño con un solo ícono, para agrupar acciones en una esquina sin ocupar texto (ver .theme-toggle en main.css). */
+function iconToggleButton(iconName, title) {
+  return el("button", { class: "theme-toggle", type: "button", title }, [icon(iconName, { size: 20 })]);
+}
+
 export function renderParking(root) {
   clear(root);
 
+  const searchInput = el("input", { class: "form-control", placeholder: "Buscar por nombre, cédula, placa o apartamento..." });
+  const searchPanel = el("div", { class: "form-group mb-md", style: "display:none;" }, [searchInput]);
+  const searchToggleBtn = iconToggleButton("search", "Buscar en la cuadrícula (nombre, cédula, placa o apartamento)");
+  searchToggleBtn.addEventListener("click", () => {
+    const open = searchPanel.style.display === "none";
+    searchPanel.style.display = open ? "" : "none";
+    if (open) {
+      searchInput.focus();
+    } else {
+      searchInput.value = "";
+      renderGrid();
+    }
+  });
+  searchInput.addEventListener("input", () => renderGrid());
+
+  const history = buildHistorySearch();
   const notifyBtn = buildNotifyToggle();
+
   root.appendChild(
     el("div", { class: "back-bar" }, [
       el("button", { class: "btn btn--secondary", onclick: () => navigate("/") }, [icon("back", { size: 18 }), " Menú"]),
-      el("h2", { class: "row" }, [icon("parking"), "Parqueos de visita"]),
-      notifyBtn,
+      el("h2", { class: "row", style: "flex:1; min-width:0;" }, [icon("parking"), "Parqueos de visita"]),
+      el("div", { class: "row", style: "gap:8px; flex-shrink:0;" }, [searchToggleBtn, history.toggleBtn, notifyBtn]),
     ])
   );
-
-  const searchInput = el("input", { class: "form-control", placeholder: "Buscar por nombre, cédula, placa o apartamento..." });
-  root.appendChild(el("div", { class: "form-group mb-md" }, [searchInput]));
-  searchInput.addEventListener("input", () => renderGrid());
-
-  root.appendChild(buildHistorySearch());
+  root.appendChild(searchPanel);
+  root.appendChild(history.panel);
 
   const grid = el("div", { class: "parking-grid" });
   root.appendChild(grid);
@@ -76,21 +104,15 @@ export function renderParking(root) {
     const motoSpaces = spaces.filter((s) => s.type === "moto");
     let normalSpaces = spaces.filter((s) => s.type !== "moto");
     if (term) {
-      normalSpaces = normalSpaces.filter(
-        (s) =>
-          s.status === "occupied" &&
-          ((s.visitorName || "").toLowerCase().includes(term) ||
-            (s.visitorId || "").toLowerCase().includes(term) ||
-            (s.plate || "").toLowerCase().includes(term) ||
-            (s.destinationNumber || "").toLowerCase().includes(term))
-      );
+      normalSpaces = normalSpaces.filter((s) => s.status === "occupied" && matchesSearchTerm(term, s));
     }
 
     clear(grid);
     for (const space of motoSpaces) {
       if (!motoWidgets.has(space.number)) {
-        motoWidgets.set(space.number, renderMotoSpaceCard(space));
+        motoWidgets.set(space.number, renderMotoSpaceCard(space, () => searchInput.value.trim().toLowerCase()));
       }
+      motoWidgets.get(space.number).refreshTile();
       grid.appendChild(motoWidgets.get(space.number).el);
     }
     for (const space of normalSpaces) grid.appendChild(renderSpaceCard(space));
@@ -160,8 +182,14 @@ export function renderParking(root) {
  * fila "LIBRE" por cada cupo disponible. El documento del espacio en sí
  * nunca cambia — lo que está ocupado se ve en vivo con subscribeMotoSessions
  * (ver nota en parking.service.js).
+ *
+ * `getSearchTerm` (opcional): al buscar en la cuadrícula (ver renderGrid),
+ * este tile no se filtra como los espacios normales — sigue siempre visible
+ * porque representa VARIAS motos a la vez — pero se resalta con un borde si
+ * alguna de las motos adentro coincide con la búsqueda, para que el guardia
+ * sepa que tiene que tocarlo a ver el detalle.
  */
-function renderMotoSpaceCard(space) {
+function renderMotoSpaceCard(space, getSearchTerm) {
   const capacity = space.capacity || MOTO_SPACE_CAPACITY;
   let motoSessions = [];
   const notifiedSessions = new Set();
@@ -175,8 +203,10 @@ function renderMotoSpaceCard(space) {
   );
 
   function refreshTile() {
+    const term = getSearchTerm ? getSearchTerm() : "";
     const occupied = motoSessions.length;
     const anyOverdue = motoSessions.some((s) => s.maxMinutesAtEntry && elapsedMinutes(s.entryAt) > s.maxMinutesAtEntry);
+    const anyMatch = term && motoSessions.some((s) => matchesSearchTerm(term, s));
     clear(statusBadge);
     if (occupied === 0) {
       tile.className = "space-card space-card--free";
@@ -188,6 +218,7 @@ function renderMotoSpaceCard(space) {
       statusBadge.append(el("span", { class: "status-dot" }), `${occupied}/${capacity} OCUPADAS`);
     }
     tile.classList.toggle("space-card--overdue", !!anyOverdue);
+    tile.classList.toggle("space-card--search-match", !!anyMatch);
   }
 
   function checkNotifications() {
@@ -253,6 +284,7 @@ function renderMotoSpaceCard(space) {
 
   return {
     el: tile,
+    refreshTile,
     cleanup: () => {
       unsub();
       stopTicker();
@@ -697,9 +729,8 @@ function openMotoExitModal(space, session) {
  * solo para administradores).
  */
 function buildHistorySearch() {
-  const toggleBtn = el("button", { class: "btn btn--secondary btn--block mb-md" }, [icon("activity", { size: 18 }), " Buscar en historial de parqueos"]);
+  const toggleBtn = iconToggleButton("activity", "Buscar en el historial de parqueos");
   const panel = el("div", { class: "card mb-md", style: "display:none;" });
-  const wrapper = el("div", {}, [toggleBtn, panel]);
 
   const searchInput = el("input", { class: "form-control", placeholder: "Buscar por nombre, cédula, placa o apartamento..." });
   const fromInput = el("input", { class: "form-control", type: "date" });
@@ -725,15 +756,7 @@ function buildHistorySearch() {
   function renderList() {
     clear(list);
     const term = searchInput.value.trim().toLowerCase();
-    const filtered = term
-      ? allRows.filter(
-          (r) =>
-            (r.visitorName || "").toLowerCase().includes(term) ||
-            (r.visitorId || "").toLowerCase().includes(term) ||
-            (r.plate || "").toLowerCase().includes(term) ||
-            (r.destinationNumber || "").toLowerCase().includes(term)
-        )
-      : allRows;
+    const filtered = term ? allRows.filter((r) => matchesSearchTerm(term, r)) : allRows;
     if (filtered.length === 0) {
       list.appendChild(emptyState("parking", allRows.length === 0 ? "Sin registros en el historial." : "Ningún registro coincide con la búsqueda."));
       return;
@@ -780,7 +803,7 @@ function buildHistorySearch() {
     if (open && !loaded) load();
   });
 
-  return wrapper;
+  return { toggleBtn, panel };
 }
 
 /**
@@ -792,7 +815,7 @@ function buildHistorySearch() {
 function buildNotifyToggle() {
   if (!notificationsSupported()) return el("span", {});
 
-  const btn = el("button", { class: "btn btn--secondary", style: "margin-left:auto;", title: "Avisos de tiempo vencido" });
+  const btn = el("button", { class: "theme-toggle", type: "button", title: "Avisos de tiempo vencido" });
 
   function refresh() {
     clear(btn);
