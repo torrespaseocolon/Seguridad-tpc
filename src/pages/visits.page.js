@@ -71,7 +71,8 @@ export function renderVisits(root) {
           (v) =>
             (v.visitorName || "").toLowerCase().includes(term) ||
             (v.visitorId || "").toLowerCase().includes(term) ||
-            (v.destinationNumber || "").toLowerCase().includes(term)
+            (v.destinationNumber || "").toLowerCase().includes(term) ||
+            (v.plate || "").toLowerCase().includes(term)
         )
       : allVisits;
     if (filtered.length === 0) {
@@ -108,6 +109,20 @@ export function renderVisits(root) {
   load();
 }
 
+/** Distingue las 3 formas de ingreso (ver nota en visits.service.js). `entryMode` puede faltar en registros viejos (antes de este cambio) — se usa needsParking como respaldo. */
+function modeBadge(v) {
+  if (v.entryMode === "parking" || (!v.entryMode && v.needsParking)) {
+    return el("span", { class: "badge badge--info" }, `Parqueo ${v.parkingSpaceNumber || "?"}`);
+  }
+  if (v.entryMode === "ownerSpace") {
+    return el("span", { class: "badge badge--free" }, `Espacio propio · ${v.plate || "sin placa"}`);
+  }
+  if (v.entryMode === "pedestrian") {
+    return el("span", { class: "badge badge--free" }, "Ingreso peatonal");
+  }
+  return el("span", { class: "badge badge--free" }, "No necesita parqueo");
+}
+
 function renderVisitCard(v, reload) {
   const canOperate = canOperateParking(getProfile());
   const canRegisterExit = v.needsParking && v.parkingSessionId && !v.exitAt && canOperate;
@@ -139,16 +154,7 @@ function renderVisitCard(v, reload) {
   return el("div", { class: "card" }, [
     el("div", { class: "row row--between" }, [
       el("strong", {}, v.visitorName),
-      el(
-        "div",
-        { class: "row", style: "gap:8px; align-items:center;" },
-        [
-          v.needsParking
-            ? el("span", { class: "badge badge--info" }, `Parqueo ${v.parkingSpaceNumber || "?"}`)
-            : el("span", { class: "badge badge--free" }, "No necesita parqueo"),
-          exitBtn,
-        ].filter(Boolean)
-      ),
+      el("div", { class: "row", style: "gap:8px; align-items:center;" }, [modeBadge(v), exitBtn].filter(Boolean)),
     ]),
     el("div", { class: "text-secondary" }, `${destinationLabel(v.destinationType, v.destinationNumber)} · Cédula ${v.visitorId} · Tel. ${v.visitorPhone || "-"}`),
     el("div", { class: "row row--between", style: "padding-top:4px;" }, [
@@ -166,21 +172,22 @@ function renderVisitCard(v, reload) {
   ].filter(Boolean));
 }
 
-function openNewVisitModal(reload) {
+function openNewVisitModal(reload, prefill = null) {
   const profile = getProfile();
   const canOperate = canOperateParking(profile);
 
-  const nameInput = el("input", { class: "form-control", required: true });
-  const idInput = el("input", { class: "form-control", required: true });
-  const phoneInput = el("input", { class: "form-control", type: "tel", required: true, placeholder: "Ej. 8888 8888" });
+  const nameInput = el("input", { class: "form-control", required: true, value: prefill?.visitorName || "" });
+  const idInput = el("input", { class: "form-control", required: true, value: prefill?.visitorId || "" });
+  const phoneInput = el("input", { class: "form-control", type: "tel", placeholder: "Ej. 8888 8888", value: prefill?.visitorPhone || "" });
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
-  const destField = createDestinationField({ defaultTower, required: true });
-  const notesInput = el("textarea", { class: "form-control", rows: "2" });
+  const destField = createDestinationField({ defaultTower, required: true, initialValue: prefill?.destinationNumber || "" });
+  const notesInput = el("textarea", { class: "form-control", rows: "2" }, prefill?.notes || "");
+  const plateInput = el("input", { class: "form-control", style: "text-transform:uppercase;", value: prefill?.plate || "" });
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
 
   function collectVisitorData() {
-    if (!nameInput.value.trim() || !idInput.value.trim() || !phoneInput.value.trim()) {
-      errorBox.textContent = "Complete nombre, cédula y teléfono.";
+    if (!nameInput.value.trim() || !idInput.value.trim()) {
+      errorBox.textContent = "Complete nombre y cédula.";
       errorBox.style.display = "block";
       return null;
     }
@@ -201,32 +208,54 @@ function openNewVisitModal(reload) {
     };
   }
 
-  const noParkingBtn = el("button", { class: "btn btn--secondary btn--block btn--lg" }, [icon("card", { size: 18 }), " NO NECESITA PARQUEO"]);
-  noParkingBtn.addEventListener("click", async () => {
+  let parkingBtn = null;
+  if (canOperate) {
+    parkingBtn = el("button", { class: "btn btn--primary btn--block btn--lg" }, [icon("parking", { size: 18 }), " ASIGNAR PARQUEO"]);
+    parkingBtn.addEventListener("click", () => {
+      const data = collectVisitorData();
+      if (!data) return;
+      closeFn();
+      openAssignSpaceModal(data, reload, () => openNewVisitModal(reload, { ...data, plate: plateInput.value.trim() }));
+    });
+  }
+
+  const ownerSpaceBtn = el("button", { class: "btn btn--secondary btn--block btn--lg" }, [icon("card", { size: 18 }), " PARQUEA EN ESPACIO DE PROPIETARIO"]);
+  ownerSpaceBtn.addEventListener("click", async () => {
     const data = collectVisitorData();
     if (!data) return;
-    noParkingBtn.disabled = true;
+    const plate = plateInput.value.trim().toUpperCase();
+    if (!plate) {
+      errorBox.textContent = "Ingrese la placa del vehículo para poder identificarlo.";
+      errorBox.style.display = "block";
+      return;
+    }
+    ownerSpaceBtn.disabled = true;
     try {
-      await createVisit({ ...data, needsParking: false });
+      await createVisit({ ...data, needsParking: false, entryMode: "ownerSpace", plate });
       toast("Visita registrada.", "success");
       closeFn();
       reload();
     } catch (err) {
       toast(friendlyError(err), "danger");
-      noParkingBtn.disabled = false;
+      ownerSpaceBtn.disabled = false;
     }
   });
 
-  let parkingBtn = null;
-  if (canOperate) {
-    parkingBtn = el("button", { class: "btn btn--primary btn--block btn--lg" }, [icon("parking", { size: 18 }), " ASIGNAR ESPACIO DE PARQUEO"]);
-    parkingBtn.addEventListener("click", () => {
-      const data = collectVisitorData();
-      if (!data) return;
+  const pedestrianBtn = el("button", { class: "btn btn--secondary btn--block btn--lg" }, [icon("users", { size: 18 }), " INGRESO PEATONAL"]);
+  pedestrianBtn.addEventListener("click", async () => {
+    const data = collectVisitorData();
+    if (!data) return;
+    pedestrianBtn.disabled = true;
+    try {
+      await createVisit({ ...data, needsParking: false, entryMode: "pedestrian" });
+      toast("Visita registrada.", "success");
       closeFn();
-      openAssignSpaceModal(data, reload);
-    });
-  }
+      reload();
+    } catch (err) {
+      toast(friendlyError(err), "danger");
+      pedestrianBtn.disabled = false;
+    }
+  });
 
   const content = el(
     "div",
@@ -235,14 +264,16 @@ function openNewVisitModal(reload) {
       el("div", { class: "modal__title" }, "Nuevo visitante"),
       field("Nombre *", nameInput),
       field("Cédula *", idInput),
-      field("Teléfono *", phoneInput),
+      field("Teléfono", phoneInput),
       field("Torre + piso + unidad — a quién visita *", destField.input),
       destField.hint,
+      field("Placa (solo si va a parquear en el espacio del propietario)", plateInput),
       field("Observaciones", notesInput),
       errorBox,
       parkingBtn,
-      noParkingBtn,
-      !canOperate ? el("div", { class: "form-hint text-center" }, "Solo el guardia de Lobby B (o un administrador) puede asignar un espacio de parqueo desde acá.") : null,
+      !canOperate ? el("div", { class: "form-hint text-center" }, "Solo el guardia de Lobby B (o un administrador) puede asignar un parqueo compartido de visita desde acá.") : null,
+      ownerSpaceBtn,
+      pedestrianBtn,
     ].filter(Boolean)
   );
 
@@ -250,7 +281,7 @@ function openNewVisitModal(reload) {
   nameInput.focus();
 }
 
-function openAssignSpaceModal(visitorData, reload) {
+function openAssignSpaceModal(visitorData, reload, onBack) {
   const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
   const spaceListBox = el("div", { class: "stack", style: "max-height:280px; overflow-y:auto;" });
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
@@ -336,6 +367,7 @@ function openAssignSpaceModal(visitorData, reload) {
       await createVisit({
         ...visitorData,
         needsParking: true,
+        entryMode: "parking",
         parkingSpaceNumber: selectedSpace.number,
         parkingSessionId: result.sessionId,
       });
@@ -351,6 +383,14 @@ function openAssignSpaceModal(visitorData, reload) {
     }
   });
 
+  const backBtn = onBack
+    ? el("button", { class: "btn btn--secondary btn--block", type: "button" }, [icon("back", { size: 18 }), " Volver al formulario"])
+    : null;
+  backBtn?.addEventListener("click", () => {
+    closeFn();
+    onBack();
+  });
+
   const content = el("div", { class: "stack" }, [
     el("div", { class: "modal__title" }, `Asignar parqueo — ${visitorData.visitorName}`),
     field("Placa *", plateInput),
@@ -358,7 +398,8 @@ function openAssignSpaceModal(visitorData, reload) {
     spaceListBox,
     errorBox,
     confirmBtn,
-  ]);
+    backBtn,
+  ].filter(Boolean));
 
   const closeFn = openModal(content);
   loadSpaces();

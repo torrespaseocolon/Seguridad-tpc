@@ -5,6 +5,13 @@
 // falta un espacio, esta pantalla reutiliza registerEntry() de
 // parking.service.js para crear el mismo registro de parqueo de siempre —
 // visits/{id} solo guarda además el enlace a ese registro.
+//
+// `entryMode` distingue las 3 formas en que puede ingresar una visita:
+// "parking" (se le asignó un parqueo compartido de visita — needsParking
+// true, con parkingSpaceNumber/parkingSessionId), "ownerSpace" (parquea en
+// el espacio propio del apartamento/oficina que visita — se guarda la placa
+// para poder identificar el auto si hace falta, pero no toca parking_spaces
+// ni parking_sessions) o "pedestrian" (ingreso a pie, sin vehículo).
 import { db } from "../firebase/firebase-init.js";
 import {
   collection,
@@ -28,6 +35,8 @@ export async function createVisit({
   destinationType,
   destinationNumber,
   needsParking,
+  entryMode = null,
+  plate = null,
   parkingSpaceNumber = null,
   parkingSessionId = null,
   notes,
@@ -39,10 +48,12 @@ export async function createVisit({
     setDoc(ref, {
       visitorName,
       visitorId,
-      visitorPhone,
+      visitorPhone: visitorPhone || "",
       destinationType,
       destinationNumber,
       needsParking: !!needsParking,
+      entryMode,
+      plate: plate || null,
       parkingSpaceNumber,
       parkingSessionId,
       notes: notes || "",
@@ -53,7 +64,7 @@ export async function createVisit({
       lobby: profile.lobby || null,
     })
   );
-  logAudit("visit.create", { targetCollection: "visits", targetId: ref.id, details: { visitorName, destinationNumber, needsParking } });
+  logAudit("visit.create", { targetCollection: "visits", targetId: ref.id, details: { visitorName, destinationNumber, entryMode } });
   return ref.id;
 }
 
