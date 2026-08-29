@@ -10,6 +10,8 @@ import {
   MOTO_SPACE_CAPACITY,
   buildConsultaUrl,
   fetchParkingHistory,
+  fetchAvailableVisitorSpaces,
+  correctSessionSpace,
   OperationError,
 } from "../services/parking.service.js";
 import { createDestinationField } from "../utils/destination-field.js";
@@ -501,6 +503,20 @@ function openExitModal(space) {
     }
   }
 
+  // Corregir espacio: por si al visitante se le indicó un número de parqueo
+  // pero terminó parqueando en otro (mala comunicación con el guardia de
+  // Lobby B). Mueve la ocupación al espacio correcto sin tocar la hora de
+  // entrada real — ver correctSessionSpace() en parking.service.js.
+  const correctSpaceBtn = canOperate
+    ? el("button", { class: "btn btn--secondary btn--block" }, [icon("refresh", { size: 18 }), " Corregir: en realidad está en otro parqueo"])
+    : null;
+  correctSpaceBtn?.addEventListener("click", () => {
+    openCorrectSpaceModal(space, () => {
+      tickerStop();
+      originalClose();
+    });
+  });
+
   const content = el("div", { class: "stack" }, [
     el("div", { class: "modal__title" }, `Parqueo ${space.number}`),
     el("div", { class: "card" }, [
@@ -514,6 +530,7 @@ function openExitModal(space) {
     el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
     qrBtn,
     whatsappBtn,
+    correctSpaceBtn,
     readOnlyNote,
     errorBox,
     confirmBtn,
@@ -549,6 +566,62 @@ function openExitModal(space) {
         confirmBtn.textContent = "REGISTRAR SALIDA";
       }
     });
+  }
+}
+
+/**
+ * Modal para elegir a qué otro espacio de carro se debe mover la ocupación
+ * actual de `space` (ver correctSessionSpace() en parking.service.js). Solo
+ * lista espacios de carro libres, sin motos (no tiene sentido "cambiar de
+ * espacio" cuando todas las motos comparten el mismo número físico).
+ */
+function openCorrectSpaceModal(space, onDone) {
+  const listBox = el("div", { class: "stack", style: "max-height:280px; overflow-y:auto;" });
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const content = el("div", { class: "stack" }, [
+    el("div", { class: "modal__title" }, `Corregir espacio — actualmente parqueo ${space.number}`),
+    el("div", { class: "text-secondary mb-md" }, `Elegí el parqueo donde realmente está el vehículo ${space.plate || ""}.`),
+    listBox,
+    errorBox,
+  ]);
+  const closeFn = openModal(content);
+  loadFreeSpaces();
+
+  async function loadFreeSpaces() {
+    clear(listBox);
+    listBox.appendChild(loadingState());
+    try {
+      const options = (await fetchAvailableVisitorSpaces()).filter((s) => s.vehicleKind === "car" && s.number !== space.number);
+      clear(listBox);
+      if (options.length === 0) {
+        listBox.appendChild(emptyState("parking", "No hay otros parqueos de visitante libres en este momento."));
+        return;
+      }
+      for (const s of options) {
+        const row = el("div", { class: "card", style: "cursor:pointer;" }, `Parqueo ${s.number}`);
+        row.addEventListener("click", async () => {
+          const ok = await confirmDialog({
+            title: "Confirmar corrección",
+            body: `¿Confirma que el vehículo ${space.plate || ""} en realidad está en el parqueo ${s.number} (no en el ${space.number})? El parqueo ${space.number} quedará libre.`,
+            confirmText: "Sí, corregir",
+          });
+          if (!ok) return;
+          try {
+            await correctSessionSpace(space.sessionId, space.number, s.number);
+            toast(`Corregido: ahora es el parqueo ${s.number}.`, "success");
+            closeFn();
+            onDone?.();
+          } catch (err) {
+            errorBox.textContent = err instanceof OperationError ? err.message : friendlyError(err);
+            errorBox.style.display = "block";
+          }
+        });
+        listBox.appendChild(row);
+      }
+    } catch (err) {
+      clear(listBox);
+      listBox.appendChild(emptyState("warning", friendlyError(err)));
+    }
   }
 }
 

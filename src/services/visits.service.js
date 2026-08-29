@@ -80,6 +80,20 @@ export async function markVisitExited(id) {
   logAudit("visit.exit", { targetCollection: "visits", targetId: id });
 }
 
+/**
+ * Corrige CÓMO ingresó una visita (el guardia se equivocó de modalidad al
+ * registrarla, o el visitante terminó haciendo algo distinto de lo
+ * indicado — ver nota arriba). `patch` solo puede tocar los campos que
+ * firestore.rules permite para un guardia de Lobby B: entryMode, plate,
+ * needsParking, parkingSpaceNumber, parkingSessionId. Si el cambio implica
+ * crear o liberar un parqueo compartido real, eso ya debe haberse hecho
+ * ANTES de llamar a esta función (ver visits.page.js).
+ */
+export async function updateVisitEntry(id, patch) {
+  await settle(updateDoc(doc(db, "visits", id), patch));
+  logAudit("visit.correct_entry", { targetCollection: "visits", targetId: id, details: patch });
+}
+
 export async function fetchRecentVisits(max = 100) {
   const q = query(collection(db, "visits"), orderBy("createdAt", "desc"), fbLimit(max));
   const snap = await getDocs(q);

@@ -468,6 +468,113 @@ export async function registerVisitExit(sessionId, spaceNumber) {
   return { alreadyClosed: false };
 }
 
+/**
+ * Espacios de visita libres (carro y moto, con cupos) disponibles para
+ * asignar o corregir el parqueo de una visita — mismo cálculo que usa
+ * Parqueos para las motos (cuenta sesiones abiertas, ver nota de motos más
+ * arriba), reutilizado también desde Visitantes.
+ */
+export async function fetchAvailableVisitorSpaces() {
+  const snap = await getDocs(collection(db, "parking_spaces"));
+  const allSpaces = snap.docs.map((d) => d.data());
+  const options = allSpaces
+    .filter((s) => s.type === "visitor" && s.status === "free")
+    .map((s) => ({ ...s, vehicleKind: "car" }));
+
+  for (const space of allSpaces.filter((s) => s.type === "moto")) {
+    const capacity = space.capacity || MOTO_SPACE_CAPACITY;
+    const openSnap = await getDocs(
+      query(collection(db, "parking_sessions"), where("status", "==", "open"), where("spaceNumber", "==", space.number))
+    );
+    const occupied = openSnap.size;
+    if (occupied < capacity) {
+      options.push({ ...space, vehicleKind: "moto", motoOccupied: occupied, motoCapacity: capacity });
+    }
+  }
+  return options.sort((a, b) => String(a.number).localeCompare(String(b.number)));
+}
+
+/**
+ * Corrige el espacio real de un carro que quedó registrado en el número
+ * equivocado (por ejemplo: se le indicó al visitante el parqueo 12 pero
+ * terminó parqueando en el 13) — mueve la ocupación del espacio viejo al
+ * nuevo sin pasar por un "registrar salida"/"registrar entrada" (eso
+ * cambiaría la hora de entrada real). Solo para sesiones de CARRO
+ * actualmente abiertas — no aplica a motos (no tiene sentido "cambiar de
+ * espacio" cuando todas comparten el mismo número físico).
+ */
+export async function correctSessionSpace(sessionId, oldSpaceNumber, newSpaceNumber, note) {
+  if (oldSpaceNumber === newSpaceNumber) {
+    throw new OperationError("El nuevo parqueo debe ser diferente al actual.");
+  }
+  const [oldSnap, newSnap, sessionSnap] = await Promise.all([
+    getDoc(doc(db, "parking_spaces", oldSpaceNumber)),
+    getDoc(doc(db, "parking_spaces", newSpaceNumber)),
+    getDoc(doc(db, "parking_sessions", sessionId)),
+  ]);
+  if (!sessionSnap.exists() || sessionSnap.data().status !== "open") {
+    throw new OperationError("Ese registro ya no está abierto.");
+  }
+  if (!oldSnap.exists() || oldSnap.data().sessionId !== sessionId) {
+    throw new OperationError("El parqueo actual ya no corresponde a este registro (puede que ya se haya corregido desde otro lado).");
+  }
+  if (!newSnap.exists()) throw new OperationError(`El parqueo ${newSpaceNumber} no existe.`);
+  const newSpace = newSnap.data();
+  if (newSpace.type === "moto") throw new OperationError("No se puede corregir hacia un espacio de motos desde acá.");
+  if (newSpace.status !== "free") throw new OperationError(`El parqueo ${newSpaceNumber} ya está ocupado.`);
+
+  const session = sessionSnap.data();
+  const correctionNote = note || `Corrección: el vehículo estaba registrado en el parqueo ${oldSpaceNumber} pero en realidad está en el ${newSpaceNumber}.`;
+
+  await Promise.all([
+    updateDoc(doc(db, "parking_spaces", newSpaceNumber), {
+      status: "occupied",
+      sessionId,
+      visitorName: session.visitorName,
+      visitorId: session.visitorId,
+      plate: session.plate,
+      visitorPhone: session.visitorPhone || "",
+      isDemo: !!session.isDemo,
+      destinationType: session.destinationType,
+      destinationNumber: session.destinationNumber,
+      entryAt: session.entryAt,
+      entryGuardName: session.entryGuardName,
+      entryLobby: session.entryLobby,
+      maxMinutesAtEntry: session.maxMinutesAtEntry,
+      updatedAt: serverTimestamp(),
+    }),
+    updateDoc(doc(db, "parking_spaces", oldSpaceNumber), {
+      status: "free",
+      sessionId: null,
+      visitorName: null,
+      visitorId: null,
+      plate: null,
+      visitorPhone: null,
+      isDemo: false,
+      destinationType: null,
+      destinationNumber: null,
+      entryAt: null,
+      entryGuardName: null,
+      entryLobby: null,
+      maxMinutesAtEntry: null,
+      updatedAt: serverTimestamp(),
+    }),
+    updateDoc(doc(db, "parking_sessions", sessionId), {
+      spaceNumber: newSpaceNumber,
+      corrected: true,
+      correctionNote,
+    }),
+    setDoc(doc(db, "public_status", sessionId), { spaceNumber: newSpaceNumber }, { merge: true }),
+  ]);
+
+  await logAudit("parking.correct_space", {
+    targetCollection: "parking_sessions",
+    targetId: sessionId,
+    details: { oldSpaceNumber, newSpaceNumber, note: correctionNote },
+  });
+  return { ok: true };
+}
+
 /** Solo administración: libera un espacio manualmente (corrección de un error operativo). */
 export async function forceReleaseSpace(spaceNumber, note) {
   const spaceRef = doc(db, "parking_spaces", spaceNumber);

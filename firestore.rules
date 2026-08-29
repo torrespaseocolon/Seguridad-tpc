@@ -165,6 +165,17 @@ service cloud.firestore {
          // "huérfano" —cuyo espacio ya fue liberado o reasignado a otro
          // vehículo mientras tanto— dejando una nota, sin necesitar admin.
          unchangedExcept(['status', 'exitAt', 'exitGuardUid', 'exitGuardName', 'exitLobby', 'durationMinutes', 'corrected', 'correctionNote']))
+        ||
+        // Corregir el NÚMERO de espacio de un registro que sigue abierto (el
+        // vehículo se equivocó de parqueo y hay que mover la ocupación al
+        // número correcto) — ver correctSessionSpace() en parking.service.js.
+        // No cierra el registro, solo cambia a qué espacio pertenece.
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lobby == 'B' &&
+         resource.data.status == 'open' &&
+         request.resource.data.status == 'open' &&
+         unchangedExcept(['spaceNumber', 'corrected', 'correctionNote']))
       );
     }
 
@@ -189,8 +200,12 @@ service cloud.firestore {
       // El guardia de Lobby B (o admin) puede marcar la hora de salida del
       // condominio de una visita que registró él mismo, desde la pantalla
       // de Visitantes — mismo criterio de "solo Lobby B" que en
-      // parking_spaces/parking_sessions más arriba. Solo puede tocar el
-      // campo exitAt, nada más.
+      // parking_spaces/parking_sessions más arriba. También puede corregir
+      // CÓMO ingresó la visita (entryMode/plate/needsParking/
+      // parkingSpaceNumber/parkingSessionId) — ej. se indicó "espacio de
+      // propietario" pero terminó usando un parqueo de visita, o viceversa
+      // (ver updateVisitEntry() en visits.service.js). Ningún otro campo
+      // (nombre, cédula, destino...) se puede tocar desde acá.
       allow update: if isSignedIn() && (
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
@@ -198,7 +213,7 @@ service cloud.firestore {
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.lobby == 'B' &&
-         unchangedExcept(['exitAt']))
+         unchangedExcept(['exitAt', 'entryMode', 'plate', 'needsParking', 'parkingSpaceNumber', 'parkingSessionId']))
       );
       allow delete: if isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&

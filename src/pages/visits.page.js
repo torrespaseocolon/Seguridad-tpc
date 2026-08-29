@@ -1,11 +1,15 @@
 import { el, clear, toast, openModal, confirmDialog, loadingState, emptyState } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
-import { db } from "../firebase/firebase-init.js";
-import { collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 import { createDestinationField } from "../utils/destination-field.js";
 import { destinationLabel } from "../utils/destination.js";
-import { registerEntry, registerMotoEntry, registerVisitExit, MOTO_SPACE_CAPACITY, OperationError } from "../services/parking.service.js";
-import { createVisit, markVisitExited, fetchRecentVisits, fetchVisitHistory } from "../services/visits.service.js";
+import {
+  registerEntry,
+  registerMotoEntry,
+  registerVisitExit,
+  fetchAvailableVisitorSpaces,
+  OperationError,
+} from "../services/parking.service.js";
+import { createVisit, updateVisitEntry, markVisitExited, fetchRecentVisits, fetchVisitHistory } from "../services/visits.service.js";
 import { getProfile } from "../services/auth.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
@@ -109,18 +113,26 @@ export function renderVisits(root) {
   load();
 }
 
-/** Distingue las 3 formas de ingreso (ver nota en visits.service.js). `entryMode` puede faltar en registros viejos (antes de este cambio) — se usa needsParking como respaldo. */
+/** Modo de ingreso efectivo — `entryMode` puede faltar en registros viejos (antes de este cambio), se usa needsParking como respaldo. */
+function effectiveMode(v) {
+  return v.entryMode || (v.needsParking ? "parking" : null);
+}
+
+/** Distingue las 3 formas de ingreso (ver nota en visits.service.js). */
 function modeBadge(v) {
-  if (v.entryMode === "parking" || (!v.entryMode && v.needsParking)) {
-    return el("span", { class: "badge badge--info" }, `Parqueo ${v.parkingSpaceNumber || "?"}`);
-  }
-  if (v.entryMode === "ownerSpace") {
-    return el("span", { class: "badge badge--free" }, `Espacio propio · ${v.plate || "sin placa"}`);
-  }
-  if (v.entryMode === "pedestrian") {
-    return el("span", { class: "badge badge--free" }, "Ingreso peatonal");
-  }
+  const mode = effectiveMode(v);
+  if (mode === "parking") return el("span", { class: "badge badge--info" }, `Parqueo ${v.parkingSpaceNumber || "?"}`);
+  if (mode === "ownerSpace") return el("span", { class: "badge badge--free" }, `Espacio propio · ${v.plate || "sin placa"}`);
+  if (mode === "pedestrian") return el("span", { class: "badge badge--free" }, "Ingreso peatonal");
   return el("span", { class: "badge badge--free" }, "No necesita parqueo");
+}
+
+function modeDescription(v) {
+  const mode = effectiveMode(v);
+  if (mode === "parking") return `Parqueo de visita ${v.parkingSpaceNumber || "?"}`;
+  if (mode === "ownerSpace") return `Espacio propio del apartamento/oficina (placa ${v.plate || "sin placa"})`;
+  if (mode === "pedestrian") return "Ingreso peatonal, sin vehículo";
+  return "Sin registrar";
 }
 
 function renderVisitCard(v, reload) {
@@ -151,10 +163,16 @@ function renderVisitCard(v, reload) {
     });
   }
 
+  let correctBtn = null;
+  if (canOperate) {
+    correctBtn = el("button", { class: "btn btn--secondary", style: "min-height:32px; padding:4px 10px; font-size:13px;" }, "CORREGIR");
+    correctBtn.addEventListener("click", () => openCorrectEntryModal(v, reload));
+  }
+
   return el("div", { class: "card" }, [
-    el("div", { class: "row row--between" }, [
+    el("div", { class: "row row--between", style: "flex-wrap:wrap; gap:8px;" }, [
       el("strong", {}, v.visitorName),
-      el("div", { class: "row", style: "gap:8px; align-items:center;" }, [modeBadge(v), exitBtn].filter(Boolean)),
+      el("div", { class: "row", style: "gap:8px; align-items:center; flex-wrap:wrap;" }, [modeBadge(v), exitBtn, correctBtn].filter(Boolean)),
     ]),
     el("div", { class: "text-secondary" }, `${destinationLabel(v.destinationType, v.destinationNumber)} · Cédula ${v.visitorId} · Tel. ${v.visitorPhone || "-"}`),
     el("div", { class: "row row--between", style: "padding-top:4px;" }, [
@@ -281,42 +299,26 @@ function openNewVisitModal(reload, prefill = null) {
   nameInput.focus();
 }
 
-function openAssignSpaceModal(visitorData, reload, onBack) {
-  const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
+/**
+ * Selector de espacio libre de visita (carro o moto), reutilizado tanto
+ * para asignar un parqueo nuevo (Nuevo visitante → Asignar parqueo) como
+ * para corregir uno (Corregir ingreso → "en realidad usó un parqueo de
+ * visita") — solo cambia el título/botón y qué hace `onConfirm` con el
+ * espacio y la placa elegidos. Cualquier error que lance `onConfirm` se
+ * muestra en el propio modal en vez de cerrarlo.
+ */
+function openSpacePickerModal({ title, confirmLabel, initialPlate = "", extraFooter = [], onConfirm }) {
+  const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;", value: initialPlate });
   const spaceListBox = el("div", { class: "stack", style: "max-height:280px; overflow-y:auto;" });
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
-  const confirmBtn = el("button", { class: "btn btn--primary btn--block btn--lg", disabled: true }, "REGISTRAR ENTRADA");
+  const confirmBtn = el("button", { class: "btn btn--primary btn--block btn--lg", disabled: true }, confirmLabel);
   let selectedSpace = null;
 
   async function loadSpaces() {
     clear(spaceListBox);
     spaceListBox.appendChild(loadingState());
     try {
-      // Trae todos los espacios y filtra en JS (no where+orderBy en campos
-      // distintos) para no depender de un índice compuesto — mismo patrón
-      // que demo.tab.js.
-      const snap = await getDocs(collection(db, "parking_spaces"));
-      const allSpaces = snap.docs.map((d) => d.data());
-      const options = allSpaces
-        .filter((s) => s.type === "visitor" && s.status === "free")
-        .map((s) => ({ ...s, vehicleKind: "car" }));
-
-      // El espacio de motos nunca marca su propio documento como
-      // "ocupado" (ver nota de motos en parking.service.js) — la
-      // disponibilidad real se calcula contando cuántas sesiones de moto
-      // siguen abiertas para ese espacio, igual que en Parqueos.
-      for (const space of allSpaces.filter((s) => s.type === "moto")) {
-        const capacity = space.capacity || MOTO_SPACE_CAPACITY;
-        const openSnap = await getDocs(
-          query(collection(db, "parking_sessions"), where("status", "==", "open"), where("spaceNumber", "==", space.number))
-        );
-        const occupied = openSnap.size;
-        if (occupied < capacity) {
-          options.push({ ...space, vehicleKind: "moto", motoOccupied: occupied, motoCapacity: capacity });
-        }
-      }
-      options.sort((a, b) => String(a.number).localeCompare(String(b.number)));
-
+      const options = await fetchAvailableVisitorSpaces();
       clear(spaceListBox);
       if (options.length === 0) {
         spaceListBox.appendChild(emptyState("parking", "No hay parqueos de visitante libres en este momento."));
@@ -353,12 +355,50 @@ function openAssignSpaceModal(visitorData, reload, onBack) {
     confirmBtn.disabled = true;
     confirmBtn.textContent = "GUARDANDO...";
     try {
-      const isMoto = selectedSpace.vehicleKind === "moto";
+      await onConfirm({ space: selectedSpace, plate: plateInput.value.trim().toUpperCase(), closeFn });
+    } catch (err) {
+      errorBox.textContent = err instanceof OperationError ? err.message : friendlyError(err);
+      errorBox.style.display = "block";
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = confirmLabel;
+    }
+  });
+
+  const content = el(
+    "div",
+    { class: "stack" },
+    [
+      el("div", { class: "modal__title" }, title),
+      field("Placa *", plateInput),
+      el("div", { class: "card__title" }, "Elegí un espacio libre"),
+      spaceListBox,
+      errorBox,
+      confirmBtn,
+      ...extraFooter,
+    ].filter(Boolean)
+  );
+
+  const closeFn = openModal(content);
+  loadSpaces();
+  return closeFn;
+}
+
+function openAssignSpaceModal(visitorData, reload, onBack) {
+  const backBtn = onBack
+    ? el("button", { class: "btn btn--secondary btn--block", type: "button" }, [icon("back", { size: 18 }), " Volver al formulario"])
+    : null;
+
+  const closeModal = openSpacePickerModal({
+    title: `Asignar parqueo — ${visitorData.visitorName}`,
+    confirmLabel: "REGISTRAR ENTRADA",
+    extraFooter: backBtn ? [backBtn] : [],
+    onConfirm: async ({ space, plate, closeFn }) => {
+      const isMoto = space.vehicleKind === "moto";
       const entryFn = isMoto ? registerMotoEntry : registerEntry;
-      const result = await entryFn(selectedSpace.number, {
+      const result = await entryFn(space.number, {
         visitorName: visitorData.visitorName,
         visitorId: visitorData.visitorId,
-        plate: plateInput.value.trim().toUpperCase(),
+        plate,
         visitorPhone: visitorData.visitorPhone,
         destinationType: visitorData.destinationType,
         destinationNumber: visitorData.destinationNumber,
@@ -368,41 +408,137 @@ function openAssignSpaceModal(visitorData, reload, onBack) {
         ...visitorData,
         needsParking: true,
         entryMode: "parking",
-        parkingSpaceNumber: selectedSpace.number,
+        parkingSpaceNumber: space.number,
         parkingSessionId: result.sessionId,
       });
-      const spaceLabel = isMoto ? `${selectedSpace.number} (moto)` : selectedSpace.number;
+      const spaceLabel = isMoto ? `${space.number} (moto)` : space.number;
       toast(`Visita registrada. Entrada en el parqueo ${spaceLabel}.`, "success");
       showConsultaQr(spaceLabel, result.consultaUrl, closeFn, { name: visitorData.visitorName, phone: visitorData.visitorPhone });
       reload();
-    } catch (err) {
-      errorBox.textContent = err instanceof OperationError ? err.message : friendlyError(err);
-      errorBox.style.display = "block";
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = "REGISTRAR ENTRADA";
-    }
+    },
   });
 
-  const backBtn = onBack
-    ? el("button", { class: "btn btn--secondary btn--block", type: "button" }, [icon("back", { size: 18 }), " Volver al formulario"])
-    : null;
   backBtn?.addEventListener("click", () => {
-    closeFn();
+    closeModal();
     onBack();
   });
+}
 
-  const content = el("div", { class: "stack" }, [
-    el("div", { class: "modal__title" }, `Asignar parqueo — ${visitorData.visitorName}`),
-    field("Placa *", plateInput),
-    el("div", { class: "card__title" }, "Elegí un espacio libre"),
-    spaceListBox,
-    errorBox,
-    confirmBtn,
-    backBtn,
-  ].filter(Boolean));
+/**
+ * Menú de corrección para una visita ya registrada — ver pedido explícito
+ * de administración: se le indicó al visitante una modalidad (parqueo
+ * compartido / espacio del propietario / a pie) pero terminó haciendo otra
+ * por un malentendido con el guardia. Solo ofrece las 2 modalidades
+ * distintas a la actual; cada una decide si hace falta liberar o crear un
+ * parqueo compartido real antes de guardar la corrección.
+ */
+function openCorrectEntryModal(v, reload) {
+  const currentMode = effectiveMode(v);
+  const plateInput = el("input", { class: "form-control", style: "text-transform:uppercase;", value: v.plate || "" });
+  const errorBox = el("div", { class: "form-error", style: "display:none;" });
+  const buttons = [];
 
+  if (currentMode !== "parking") {
+    const btn = el("button", { class: "btn btn--primary btn--block btn--lg" }, [icon("parking", { size: 18 }), " EN REALIDAD USÓ UN PARQUEO DE VISITA"]);
+    btn.addEventListener("click", () => {
+      closeFn();
+      openCorrectPickSpaceModal(v, reload);
+    });
+    buttons.push(btn);
+  }
+
+  async function applySimpleCorrection(btn, targetMode) {
+    let plate = null;
+    if (targetMode === "ownerSpace") {
+      plate = plateInput.value.trim().toUpperCase();
+      if (!plate) {
+        errorBox.textContent = "Ingrese la placa del vehículo.";
+        errorBox.style.display = "block";
+        return;
+      }
+    }
+    errorBox.style.display = "none";
+    btn.disabled = true;
+    try {
+      if (currentMode === "parking" && v.parkingSessionId) {
+        await registerVisitExit(v.parkingSessionId, v.parkingSpaceNumber);
+      }
+      await updateVisitEntry(v.id, {
+        entryMode: targetMode,
+        needsParking: false,
+        plate,
+        parkingSpaceNumber: null,
+        parkingSessionId: null,
+      });
+      toast("Ingreso corregido.", "success");
+      closeFn();
+      reload();
+    } catch (err) {
+      toast(friendlyError(err), "danger");
+      btn.disabled = false;
+    }
+  }
+
+  if (currentMode !== "ownerSpace") {
+    const btn = el("button", { class: "btn btn--secondary btn--block btn--lg" }, [icon("card", { size: 18 }), " EN REALIDAD PARQUEÓ EN EL ESPACIO DEL PROPIETARIO"]);
+    btn.addEventListener("click", () => applySimpleCorrection(btn, "ownerSpace"));
+    buttons.push(btn);
+  }
+  if (currentMode !== "pedestrian") {
+    const btn = el("button", { class: "btn btn--secondary btn--block btn--lg" }, [icon("users", { size: 18 }), " EN REALIDAD INGRESÓ A PIE"]);
+    btn.addEventListener("click", () => applySimpleCorrection(btn, "pedestrian"));
+    buttons.push(btn);
+  }
+
+  const content = el(
+    "div",
+    { class: "stack" },
+    [
+      el("div", { class: "modal__title" }, `Corregir ingreso — ${v.visitorName}`),
+      el("div", { class: "text-secondary mb-md" }, `Actualmente: ${modeDescription(v)}`),
+      field("Placa (solo si va a quedar en el espacio del propietario)", plateInput),
+      errorBox,
+      ...buttons,
+    ].filter(Boolean)
+  );
   const closeFn = openModal(content);
-  loadSpaces();
+}
+
+/** Corrección hacia "usó un parqueo de visita": si ya tenía uno asignado (poco probable, pero por si acaso) lo libera primero, luego crea la entrada real en el espacio elegido. */
+function openCorrectPickSpaceModal(v, reload) {
+  const hadParking = effectiveMode(v) === "parking" && v.parkingSessionId;
+  openSpacePickerModal({
+    title: `Corregir ingreso — ${v.visitorName}`,
+    confirmLabel: "CONFIRMAR CORRECCIÓN",
+    initialPlate: v.plate || "",
+    onConfirm: async ({ space, plate, closeFn }) => {
+      if (hadParking) {
+        await registerVisitExit(v.parkingSessionId, v.parkingSpaceNumber);
+      }
+      const isMoto = space.vehicleKind === "moto";
+      const entryFn = isMoto ? registerMotoEntry : registerEntry;
+      const result = await entryFn(space.number, {
+        visitorName: v.visitorName,
+        visitorId: v.visitorId,
+        plate,
+        visitorPhone: v.visitorPhone,
+        destinationType: v.destinationType,
+        destinationNumber: v.destinationNumber,
+        lobbyOverride: "B",
+      });
+      await updateVisitEntry(v.id, {
+        entryMode: "parking",
+        needsParking: true,
+        plate: null,
+        parkingSpaceNumber: space.number,
+        parkingSessionId: result.sessionId,
+      });
+      const spaceLabel = isMoto ? `${space.number} (moto)` : space.number;
+      toast(`Ingreso corregido. Entrada en el parqueo ${spaceLabel}.`, "success");
+      showConsultaQr(spaceLabel, result.consultaUrl, closeFn, { name: v.visitorName, phone: v.visitorPhone });
+      reload();
+    },
+  });
 }
 
 function field(labelText, inputNode) {
