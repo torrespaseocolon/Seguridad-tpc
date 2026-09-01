@@ -23,6 +23,7 @@ import { navigate } from "../router.js";
 import { notificationsSupported, getPermission, isEnabled, enable, disable, notify } from "../utils/notify.js";
 import { whatsappLink } from "../utils/whatsapp.js";
 import { friendlyError } from "../utils/errors.js";
+import { createVisit } from "../services/visits.service.js";
 
 // La entrada física de los parqueos de visita está solo en Lobby B (ver
 // commit "Poner Lobby B primero en el selector de lobby"). Por eso, desde
@@ -56,6 +57,29 @@ function matchesSearchTerm(term, data) {
 /** Botón cuadrado pequeño con un solo ícono, para agrupar acciones en una esquina sin ocupar texto (ver .theme-toggle en main.css). */
 function iconToggleButton(iconName, title) {
   return el("button", { class: "theme-toggle", type: "button", title }, [icon(iconName, { size: 20 })]);
+}
+
+/**
+ * Espeja en Visitantes cualquier entrada registrada directamente desde
+ * Parqueos (antes solo quedaba en Visitantes si se había creado desde esa
+ * pantalla) — a pedido de administración, para que el registro de
+ * Visitantes muestre todo ingreso vehicular sin importar por cuál pantalla
+ * se registró. Nunca bloquea ni interrumpe el flujo de Parqueos: si falla,
+ * solo queda un aviso en la consola (la entrada real ya quedó guardada de
+ * todas formas).
+ */
+function mirrorEntryToVisits({ visitorName, visitorId, visitorPhone, destinationType, destinationNumber, spaceNumber, sessionId }) {
+  createVisit({
+    visitorName,
+    visitorId,
+    visitorPhone,
+    destinationType,
+    destinationNumber,
+    needsParking: true,
+    entryMode: "parking",
+    parkingSpaceNumber: spaceNumber,
+    parkingSessionId: sessionId,
+  }).catch((err) => console.error("[SEGURIDAD TPC] No se pudo reflejar la entrada en Visitantes:", err));
 }
 
 export function renderParking(root) {
@@ -447,6 +471,15 @@ function openEntryModal(space) {
             lobbyOverride: "B",
           });
           toast(`Entrada registrada en el parqueo ${space.number}.`, "success");
+          mirrorEntryToVisits({
+            visitorName: nameInput.value.trim(),
+            visitorId: idInput.value.trim(),
+            visitorPhone: phoneInput.value.trim(),
+            destinationType,
+            destinationNumber,
+            spaceNumber: space.number,
+            sessionId: result.sessionId,
+          });
           showConsultaQr(space.number, result.consultaUrl, closeFn, { name: nameInput.value.trim(), phone: phoneInput.value.trim() });
         } catch (err) {
           errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la entrada. Intente nuevamente.";
@@ -689,6 +722,15 @@ function openMotoEntryModal(space) {
             lobbyOverride: "B",
           });
           toast(`Entrada de moto registrada en el parqueo ${space.number}.`, "success");
+          mirrorEntryToVisits({
+            visitorName: nameInput.value.trim(),
+            visitorId: idInput.value.trim(),
+            visitorPhone: phoneInput.value.trim(),
+            destinationType,
+            destinationNumber,
+            spaceNumber: space.number,
+            sessionId: result.sessionId,
+          });
           showConsultaQr(`${space.number} (moto)`, result.consultaUrl, closeFn, { name: nameInput.value.trim(), phone: phoneInput.value.trim() });
         } catch (err) {
           errorBox.textContent = err instanceof OperationError ? err.message : "No fue posible registrar la entrada. Intente nuevamente.";

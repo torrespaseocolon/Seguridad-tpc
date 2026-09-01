@@ -94,6 +94,21 @@ export async function updateVisitEntry(id, patch) {
   logAudit("visit.correct_entry", { targetCollection: "visits", targetId: id, details: patch });
 }
 
+/**
+ * Si esta sesión de parqueo tiene una visita vinculada (parkingSessionId),
+ * la marca como salida también — para que el registro de Visitantes quede
+ * al día sin importar si la salida se registró ahí mismo o directo desde
+ * Parqueos. No hace nada si no hay ninguna visita vinculada o si esa visita
+ * ya estaba marcada como salida.
+ */
+export async function closeLinkedVisit(sessionId) {
+  const snap = await getDocs(query(collection(db, "visits"), where("parkingSessionId", "==", sessionId), fbLimit(1)));
+  if (snap.empty) return;
+  const visit = snap.docs[0];
+  if (visit.data().exitAt) return;
+  await markVisitExited(visit.id);
+}
+
 export async function fetchRecentVisits(max = 100) {
   const q = query(collection(db, "visits"), orderBy("createdAt", "desc"), fbLimit(max));
   const snap = await getDocs(q);

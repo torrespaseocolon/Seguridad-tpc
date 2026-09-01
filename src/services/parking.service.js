@@ -21,6 +21,7 @@ import { elapsedMinutes } from "../utils/time.js";
 import { isOnline } from "../utils/connectivity.js";
 import { settle } from "../utils/offline-write.js";
 import { PROVIDER_DESTINATION_TYPE } from "../utils/destination.js";
+import { closeLinkedVisit } from "./visits.service.js";
 
 // -----------------------------------------------------------------------
 // Reglas de tiempo máximo por tipo de destino y máximo de parqueos
@@ -291,6 +292,14 @@ export async function registerExit(spaceNumber, sessionId, entryAt) {
     details: { spaceNumber, durationMinutes },
   });
 
+  // Sin await, igual que logAudit: si esta sesión tiene una visita vinculada
+  // (se haya creado desde Visitantes o mirrorizado desde Parqueos), la deja
+  // al día — así la salida queda reflejada ahí sin importar desde qué
+  // pantalla se registró.
+  if (sessionId) {
+    closeLinkedVisit(sessionId).catch((err) => console.error("[SEGURIDAD TPC] No se pudo cerrar la visita vinculada:", err));
+  }
+
   return { ok: true };
 }
 
@@ -418,6 +427,10 @@ export async function registerMotoExit(sessionId, entryAt) {
   );
 
   logAudit("parking.moto_exit", { targetCollection: "parking_sessions", targetId: sessionId, details: { durationMinutes } });
+
+  // Ver nota igual en registerExit — deja al día la visita vinculada, si hay una.
+  closeLinkedVisit(sessionId).catch((err) => console.error("[SEGURIDAD TPC] No se pudo cerrar la visita vinculada:", err));
+
   return { ok: true };
 }
 
