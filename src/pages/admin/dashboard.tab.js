@@ -54,7 +54,7 @@ export async function renderDashboardTab(root) {
     );
 
     if (frequentVisitors.length > 0) {
-      root.appendChild(el("div", { class: "card__title mt-lg row" }, [icon("warning", { size: 18 }), "Visitas frecuentes (últimos 7 días)"]));
+      root.appendChild(el("div", { class: "card__title mt-lg row" }, [icon("warning", { size: 18 }), "Visitas frecuentes (esta semana, lunes a domingo)"]));
       root.appendChild(frequentVisitorsCard(frequentVisitors));
     }
 
@@ -144,7 +144,7 @@ function openFrequentVisitorDetail(alert) {
   );
   const content = el("div", { class: "stack" }, [
     el("div", { class: "modal__title" }, `${alert.plate} — ${destinationLabel(alert.destinationType, alert.destinationNumber)}`),
-    el("div", { class: "text-secondary mb-md" }, `${alert.count} entradas en los últimos 7 días (parqueo de visita o espacio del propietario).`),
+    el("div", { class: "text-secondary mb-md" }, `${alert.count} entradas esta semana, lunes a domingo (parqueo de visita o espacio del propietario).`),
     list,
   ]);
   openModal(content);

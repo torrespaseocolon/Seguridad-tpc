@@ -691,15 +691,25 @@ export async function fetchParkingHistory({ max = 50, from = null, to = null } =
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+/** Medianoche del lunes de la semana calendario en curso (lunes a domingo), en hora local del dispositivo. */
+function startOfCalendarWeek(date = new Date()) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=domingo, 1=lunes, ..., 6=sábado
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diffToMonday);
+  return d;
+}
+
 /**
  * Panel de administración: detecta placas que visitaron el MISMO
- * apartamento/oficina más de `minVisits - 1` veces en los últimos `days`
- * días (pedido por administración para notar visitas frecuentes que
- * podrían ser en realidad un residente sin registrar o un patrón a
- * revisar). Trae solo por rango de fecha (una sola condición, no necesita
- * índice compuesto en Firestore) y agrupa/filtra en el navegador — filtra
- * isDemo aparte también en el navegador, para no necesitar ese índice
- * compuesto tampoco.
+ * apartamento/oficina `minVisits` veces o más en lo que va de la semana
+ * calendario actual (lunes a domingo, no un conteo móvil de 7 días — a
+ * pedido explícito de administración: el conteo arranca de 0 cada lunes,
+ * en vez de ir "cayendo" solo con el paso de los días). Trae solo por rango
+ * de fecha (una sola condición, no necesita índice compuesto en Firestore)
+ * y agrupa/filtra en el navegador — filtra isDemo aparte también en el
+ * navegador, para no necesitar ese índice compuesto tampoco.
  *
  * Ago-2026: también suma las visitas que parquearon en el espacio del
  * propietario (entryMode "ownerSpace" en Visitantes) — esas nunca quedan en
@@ -707,8 +717,8 @@ export async function fetchParkingHistory({ max = 50, from = null, to = null } =
  * modalidad nunca activaría la alerta, aunque sea exactamente el patrón que
  * esta función busca detectar.
  */
-export async function fetchFrequentVisitorAlerts({ days = 7, minVisits = 3 } = {}) {
-  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+export async function fetchFrequentVisitorAlerts({ minVisits = 3 } = {}) {
+  const since = startOfCalendarWeek();
   const [sessionsSnap, ownerSpaceVisits] = await Promise.all([
     getDocs(query(collection(db, "parking_sessions"), where("entryAt", ">=", since), orderBy("entryAt", "desc"))),
     fetchOwnerSpaceVisitsSince(since),
