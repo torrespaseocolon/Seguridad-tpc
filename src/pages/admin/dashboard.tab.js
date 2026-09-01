@@ -1,4 +1,4 @@
-import { el, clear, loadingState } from "../../utils/dom.js";
+import { el, clear, loadingState, openModal } from "../../utils/dom.js";
 import { icon } from "../../utils/icons.js";
 import { db } from "../../firebase/firebase-init.js";
 import {
@@ -30,12 +30,10 @@ export async function renderDashboardTab(root) {
     ]);
 
     const spaces = spacesSnap.docs.map((d) => d.data());
-    let occupied = 0, free = 0, overdue = 0, lobbyA = 0, lobbyB = 0;
+    let occupied = 0, free = 0, overdue = 0;
     for (const s of spaces) {
       if (s.status === "occupied") {
         occupied++;
-        if (s.entryLobby === "A") lobbyA++;
-        if (s.entryLobby === "B") lobbyB++;
         if (s.maxMinutesAtEntry && elapsedMinutes(s.entryAt) > s.maxMinutesAtEntry) overdue++;
       } else if (s.status === "free") {
         free++;
@@ -59,9 +57,6 @@ export async function renderDashboardTab(root) {
       root.appendChild(el("div", { class: "card__title mt-lg row" }, [icon("warning", { size: 18 }), "Visitas frecuentes (últimos 7 días)"]));
       root.appendChild(frequentVisitorsCard(frequentVisitors));
     }
-
-    root.appendChild(el("div", { class: "card__title mt-lg" }, "Ocupación por lobby"));
-    root.appendChild(lobbyComparisonCard(lobbyA, lobbyB));
 
     root.appendChild(el("div", { class: "card__title mt-lg" }, "Actividad reciente"));
     const auditList = el("div", { class: "stack" });
@@ -104,28 +99,6 @@ function statTile(iconName, value, label, alert = false, bar = null) {
   ].filter(Boolean));
 }
 
-/**
- * Alerta de placas que visitaron el mismo apartamento/oficina 3 veces o
- * más en los últimos 7 días — no bloquea nada, solo lo pone a la vista de
- * administración para que decida si vale la pena revisarlo (ej. podría ser
- * un vehículo que en realidad debería estar registrado como residente).
- */
-function frequentVisitorsCard(alerts) {
-  return el(
-    "div",
-    { class: "stack" },
-    alerts.map((a) =>
-      el("div", { class: "card row row--between", style: "border-color:var(--color-warning);" }, [
-        el("div", {}, [
-          el("div", { style: "font-weight:700;" }, a.plate),
-          el("div", { class: "text-secondary" }, `${destinationLabel(a.destinationType, a.destinationNumber)} · última vez: ${formatDateTime(a.lastEntry)}`),
-        ]),
-        el("span", { class: "badge badge--warning" }, `${a.count} veces esta semana`),
-      ])
-    )
-  );
-}
-
 /** Barra de proporción simple (div dentro de div, sin librerías) para leer un dato de un vistazo. */
 function progressBar(value, max, color = "var(--color-primary)") {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
@@ -135,25 +108,44 @@ function progressBar(value, max, color = "var(--color-primary)") {
 }
 
 /**
- * Comparación visual Lobby A vs Lobby B: dos barras a la misma escala (el
- * mayor de los dos define el 100%), para ver de un vistazo cuál lobby tiene
- * más movimiento en este momento, sin tener que restar dos números.
+ * Alerta de placas que visitaron el mismo apartamento/oficina 3 veces o
+ * más en los últimos 7 días — no bloquea nada, solo lo pone a la vista de
+ * administración para que decida si vale la pena revisarlo (ej. podría ser
+ * un vehículo que en realidad debería estar registrado como residente).
+ * Cada tarjeta es tocable: abre el detalle con las fechas exactas de cada
+ * entrada contada (ver openFrequentVisitorDetail).
  */
-function lobbyComparisonCard(lobbyA, lobbyB) {
-  const scale = Math.max(lobbyA, lobbyB, 1);
-  return el("div", { class: "card" }, [
-    lobbyRow("A", lobbyA, scale),
-    el("div", { style: "height:12px;" }),
-    lobbyRow("B", lobbyB, scale),
-  ]);
+function frequentVisitorsCard(alerts) {
+  return el(
+    "div",
+    { class: "stack" },
+    alerts.map((a) =>
+      el(
+        "div",
+        { class: "card row row--between", style: "border-color:var(--color-warning); cursor:pointer;", onclick: () => openFrequentVisitorDetail(a) },
+        [
+          el("div", {}, [
+            el("div", { style: "font-weight:700;" }, a.plate),
+            el("div", { class: "text-secondary" }, `${destinationLabel(a.destinationType, a.destinationNumber)} · última vez: ${formatDateTime(a.lastEntry)}`),
+          ]),
+          el("span", { class: "badge badge--warning" }, `${a.count} veces esta semana`),
+        ]
+      )
+    )
+  );
 }
 
-function lobbyRow(letter, value, scale) {
-  return el("div", {}, [
-    el("div", { class: "row row--between", style: "margin-bottom:4px;" }, [
-      el("strong", {}, `Lobby ${letter}`),
-      el("span", { class: "text-secondary" }, `${value} ocupado(s)`),
-    ]),
-    progressBar(value, scale),
+/** Detalle de una alerta de visita frecuente: la fecha y hora exacta de cada una de las entradas contadas. */
+function openFrequentVisitorDetail(alert) {
+  const list = el(
+    "div",
+    { class: "stack" },
+    alert.entries.map((when) => el("div", { class: "card" }, formatDateTime(when)))
+  );
+  const content = el("div", { class: "stack" }, [
+    el("div", { class: "modal__title" }, `${alert.plate} — ${destinationLabel(alert.destinationType, alert.destinationNumber)}`),
+    el("div", { class: "text-secondary mb-md" }, `${alert.count} entradas en los últimos 7 días (parqueo de visita o espacio del propietario).`),
+    list,
   ]);
+  openModal(content);
 }

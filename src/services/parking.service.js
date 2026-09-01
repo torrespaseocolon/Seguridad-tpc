@@ -718,10 +718,11 @@ export async function fetchFrequentVisitorAlerts({ days = 7, minVisits = 3 } = {
   function bump(plate, destinationNumber, destinationType, when) {
     const key = `${plate}|${destinationNumber}`;
     if (!byKey.has(key)) {
-      byKey.set(key, { plate, destinationNumber, destinationType, count: 0, lastEntry: when });
+      byKey.set(key, { plate, destinationNumber, destinationType, count: 0, lastEntry: when, entries: [] });
     }
     const entry = byKey.get(key);
     entry.count++;
+    entry.entries.push(when);
     if ((toMillis(when) || 0) > (toMillis(entry.lastEntry) || 0)) entry.lastEntry = when;
   }
 
@@ -738,6 +739,7 @@ export async function fetchFrequentVisitorAlerts({ days = 7, minVisits = 3 } = {
 
   return Array.from(byKey.values())
     .filter((v) => v.count >= minVisits)
+    .map((v) => ({ ...v, entries: v.entries.sort((a, b) => (toMillis(b) || 0) - (toMillis(a) || 0)) }))
     .sort((a, b) => b.count - a.count);
 }
 
