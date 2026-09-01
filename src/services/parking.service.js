@@ -17,11 +17,11 @@ import {
 import { getProfile } from "./auth.service.js";
 import { logAudit } from "./audit.service.js";
 import { getTimeRules } from "./settings.service.js";
-import { elapsedMinutes } from "../utils/time.js";
+import { elapsedMinutes, toMillis } from "../utils/time.js";
 import { isOnline } from "../utils/connectivity.js";
 import { settle } from "../utils/offline-write.js";
 import { PROVIDER_DESTINATION_TYPE } from "../utils/destination.js";
-import { closeLinkedVisit } from "./visits.service.js";
+import { closeLinkedVisit, reopenLinkedVisit, updateLinkedVisitSpace, fetchOwnerSpaceVisitsSince } from "./visits.service.js";
 
 // -----------------------------------------------------------------------
 // Reglas de tiempo máximo por tipo de destino y máximo de parqueos
@@ -585,6 +585,14 @@ export async function correctSessionSpace(sessionId, oldSpaceNumber, newSpaceNum
     targetId: sessionId,
     details: { oldSpaceNumber, newSpaceNumber, note: correctionNote },
   });
+
+  // Sin await, igual que en registerExit — si esta sesión tiene una visita
+  // vinculada, actualiza el número de parqueo ahí también para que
+  // Visitantes no siga mostrando el número viejo.
+  updateLinkedVisitSpace(sessionId, newSpaceNumber).catch((err) =>
+    console.error("[SEGURIDAD TPC] No se pudo actualizar el espacio en la visita vinculada:", err)
+  );
+
   return { ok: true };
 }
 
@@ -692,26 +700,40 @@ export async function fetchParkingHistory({ max = 50, from = null, to = null } =
  * índice compuesto en Firestore) y agrupa/filtra en el navegador — filtra
  * isDemo aparte también en el navegador, para no necesitar ese índice
  * compuesto tampoco.
+ *
+ * Ago-2026: también suma las visitas que parquearon en el espacio del
+ * propietario (entryMode "ownerSpace" en Visitantes) — esas nunca quedan en
+ * parking_sessions, así que sin esto una placa que entra siempre por esa
+ * modalidad nunca activaría la alerta, aunque sea exactamente el patrón que
+ * esta función busca detectar.
  */
 export async function fetchFrequentVisitorAlerts({ days = 7, minVisits = 3 } = {}) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const snap = await getDocs(query(collection(db, "parking_sessions"), where("entryAt", ">=", since), orderBy("entryAt", "desc")));
+  const [sessionsSnap, ownerSpaceVisits] = await Promise.all([
+    getDocs(query(collection(db, "parking_sessions"), where("entryAt", ">=", since), orderBy("entryAt", "desc"))),
+    fetchOwnerSpaceVisitsSince(since),
+  ]);
 
   const byKey = new Map();
-  for (const d of snap.docs) {
+  function bump(plate, destinationNumber, destinationType, when) {
+    const key = `${plate}|${destinationNumber}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, { plate, destinationNumber, destinationType, count: 0, lastEntry: when });
+    }
+    const entry = byKey.get(key);
+    entry.count++;
+    if ((toMillis(when) || 0) > (toMillis(entry.lastEntry) || 0)) entry.lastEntry = when;
+  }
+
+  for (const d of sessionsSnap.docs) {
     const s = d.data();
     if (s.isDemo || !s.plate || !s.destinationNumber || s.destinationType === PROVIDER_DESTINATION_TYPE) continue;
-    const key = `${s.plate}|${s.destinationNumber}`;
-    if (!byKey.has(key)) {
-      byKey.set(key, {
-        plate: s.plate,
-        destinationNumber: s.destinationNumber,
-        destinationType: s.destinationType,
-        count: 0,
-        lastEntry: s.entryAt, // el primero visto ya es el más reciente (orderBy desc)
-      });
-    }
-    byKey.get(key).count++;
+    bump(s.plate, s.destinationNumber, s.destinationType, s.entryAt);
+  }
+  // Nunca se pisan con las de arriba: "ownerSpace" jamás crea parking_sessions.
+  for (const v of ownerSpaceVisits) {
+    if (v.isDemo || !v.plate || !v.destinationNumber || v.destinationType === PROVIDER_DESTINATION_TYPE) continue;
+    bump(v.plate, v.destinationNumber, v.destinationType, v.createdAt);
   }
 
   return Array.from(byKey.values())
@@ -778,6 +800,12 @@ export async function reopenSession(sessionId, note) {
   });
 
   await logAudit("parking_session.reopen", { targetCollection: "parking_sessions", targetId: sessionId, details: { note } });
+
+  // Sin await, igual que en registerExit — si esta sesión tiene una visita
+  // vinculada que ya se había marcado como salida, la vuelve a mostrar como
+  // activa, consistente con que el parqueo se reabrió.
+  reopenLinkedVisit(sessionId).catch((err) => console.error("[SEGURIDAD TPC] No se pudo reabrir la visita vinculada:", err));
+
   return { ok: true };
 }
 

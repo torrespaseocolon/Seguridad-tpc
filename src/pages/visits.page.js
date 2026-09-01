@@ -1,7 +1,7 @@
 import { el, clear, toast, openModal, confirmDialog, loadingState, emptyState } from "../utils/dom.js";
 import { icon } from "../utils/icons.js";
 import { createDestinationField } from "../utils/destination-field.js";
-import { destinationLabel } from "../utils/destination.js";
+import { destinationLabel, PROVIDER_DESTINATION_TYPE, PROVIDER_DESTINATION_NUMBER } from "../utils/destination.js";
 import {
   registerEntry,
   registerMotoEntry,
@@ -193,15 +193,37 @@ function renderVisitCard(v, reload) {
 function openNewVisitModal(reload, prefill = null) {
   const profile = getProfile();
   const canOperate = canOperateParking(profile);
+  const isProviderPrefill = !!prefill?.isProvider;
 
   const nameInput = el("input", { class: "form-control", required: true, value: prefill?.visitorName || "" });
   const idInput = el("input", { class: "form-control", required: true, value: prefill?.visitorId || "" });
   const phoneInput = el("input", { class: "form-control", type: "tel", placeholder: "Ej. 8888 8888", value: prefill?.visitorPhone || "" });
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
-  const destField = createDestinationField({ defaultTower, required: true, initialValue: prefill?.destinationNumber || "" });
+  const destField = createDestinationField({
+    defaultTower,
+    required: true,
+    initialValue: isProviderPrefill ? "" : prefill?.destinationNumber || "",
+  });
   const notesInput = el("textarea", { class: "form-control", rows: "2" }, prefill?.notes || "");
   const plateInput = el("input", { class: "form-control", style: "text-transform:uppercase;", value: prefill?.plate || "" });
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
+
+  // Categoría "Proveedor": igual que en Parqueos, no pide apartamento/oficina
+  // (se guarda como PROVIDER_DESTINATION_TYPE/NUMBER) — es para personal de
+  // mantenimiento o administración sin una unidad puntual a la que visitar.
+  const categorySelect = el("select", { class: "form-control" }, [
+    el("option", { value: "visitor" }, "Visitante"),
+    el("option", { value: "provider" }, "Proveedor (no visita una unidad puntual)"),
+  ]);
+  categorySelect.value = isProviderPrefill ? "provider" : "visitor";
+  const destFieldWrapper = field("Torre + piso + unidad — a quién visita *", destField.input);
+  function refreshCategoryVisibility() {
+    const isProvider = categorySelect.value === "provider";
+    destFieldWrapper.style.display = isProvider ? "none" : "";
+    destField.hint.style.display = isProvider ? "none" : "";
+  }
+  categorySelect.addEventListener("change", refreshCategoryVisibility);
+  refreshCategoryVisibility();
 
   function collectVisitorData() {
     if (!nameInput.value.trim() || !idInput.value.trim()) {
@@ -209,19 +231,33 @@ function openNewVisitModal(reload, prefill = null) {
       errorBox.style.display = "block";
       return null;
     }
-    const destResult = destField.getResult();
-    if (!destResult.ok) {
-      errorBox.textContent = destResult.error;
-      errorBox.style.display = "block";
-      return null;
+    const isProvider = categorySelect.value === "provider";
+    let destinationType, destinationNumber;
+    if (isProvider) {
+      destinationType = PROVIDER_DESTINATION_TYPE;
+      destinationNumber = PROVIDER_DESTINATION_NUMBER;
+    } else {
+      const destResult = destField.getResult();
+      if (!destResult.ok) {
+        errorBox.textContent = destResult.error;
+        errorBox.style.display = "block";
+        return null;
+      }
+      if (!destResult.type) {
+        errorBox.textContent = "No se pudo determinar automáticamente si es apartamento u oficina/comercio para ese piso (los pisos 2 a 7 de la Torre B son de parqueo interno, sin unidades). Verifique el número.";
+        errorBox.style.display = "block";
+        return null;
+      }
+      destinationType = destResult.type;
+      destinationNumber = destResult.code;
     }
     errorBox.style.display = "none";
     return {
       visitorName: nameInput.value.trim(),
       visitorId: idInput.value.trim(),
       visitorPhone: phoneInput.value.trim(),
-      destinationType: destResult.type,
-      destinationNumber: destResult.code,
+      destinationType,
+      destinationNumber,
       notes: notesInput.value.trim(),
     };
   }
@@ -233,7 +269,9 @@ function openNewVisitModal(reload, prefill = null) {
       const data = collectVisitorData();
       if (!data) return;
       closeFn();
-      openAssignSpaceModal(data, reload, () => openNewVisitModal(reload, { ...data, plate: plateInput.value.trim() }));
+      openAssignSpaceModal(data, reload, () =>
+        openNewVisitModal(reload, { ...data, plate: plateInput.value.trim(), isProvider: categorySelect.value === "provider" })
+      );
     });
   }
 
@@ -283,7 +321,8 @@ function openNewVisitModal(reload, prefill = null) {
       field("Nombre *", nameInput),
       field("Cédula *", idInput),
       field("Teléfono", phoneInput),
-      field("Torre + piso + unidad — a quién visita *", destField.input),
+      field("Categoría", categorySelect),
+      destFieldWrapper,
       destField.hint,
       field("Placa (solo si va a parquear en el espacio del propietario)", plateInput),
       field("Observaciones", notesInput),

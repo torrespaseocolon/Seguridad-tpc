@@ -95,18 +95,62 @@ export async function updateVisitEntry(id, patch) {
 }
 
 /**
- * Si esta sesión de parqueo tiene una visita vinculada (parkingSessionId),
- * la marca como salida también — para que el registro de Visitantes quede
- * al día sin importar si la salida se registró ahí mismo o directo desde
- * Parqueos. No hace nada si no hay ninguna visita vinculada o si esa visita
- * ya estaba marcada como salida.
+ * Busca la visita (si hay alguna) vinculada a una sesión de parqueo — usada
+ * por las 3 funciones de abajo para mantener sincronizado el registro de
+ * Visitantes con lo que pasa del lado de Parqueos, sin importar desde cuál
+ * pantalla se haga la operación.
+ */
+async function findVisitBySession(sessionId) {
+  const snap = await getDocs(query(collection(db, "visits"), where("parkingSessionId", "==", sessionId), fbLimit(1)));
+  return snap.empty ? null : snap.docs[0];
+}
+
+/**
+ * Si esta sesión de parqueo tiene una visita vinculada, la marca como salida
+ * también — para que el registro de Visitantes quede al día sin importar si
+ * la salida se registró ahí mismo o directo desde Parqueos. No hace nada si
+ * no hay ninguna visita vinculada o si esa visita ya estaba marcada como
+ * salida.
  */
 export async function closeLinkedVisit(sessionId) {
-  const snap = await getDocs(query(collection(db, "visits"), where("parkingSessionId", "==", sessionId), fbLimit(1)));
-  if (snap.empty) return;
-  const visit = snap.docs[0];
-  if (visit.data().exitAt) return;
+  const visit = await findVisitBySession(sessionId);
+  if (!visit || visit.data().exitAt) return;
   await markVisitExited(visit.id);
+}
+
+/**
+ * Contraparte de closeLinkedVisit: cuando administración reabre una sesión
+ * cerrada por error (ver reopenSession() en parking.service.js), la visita
+ * vinculada no debe seguir mostrando "salida registrada".
+ */
+export async function reopenLinkedVisit(sessionId) {
+  const visit = await findVisitBySession(sessionId);
+  if (!visit || !visit.data().exitAt) return;
+  await updateDoc(doc(db, "visits", visit.id), { exitAt: null });
+  logAudit("visit.reopen", { targetCollection: "visits", targetId: visit.id });
+}
+
+/**
+ * Si se corrige el número de espacio de una sesión (ver correctSessionSpace()
+ * en parking.service.js — "en realidad está en otro parqueo"), la visita
+ * vinculada debe mostrar el número correcto, no el viejo.
+ */
+export async function updateLinkedVisitSpace(sessionId, newSpaceNumber) {
+  const visit = await findVisitBySession(sessionId);
+  if (!visit) return;
+  await updateDoc(doc(db, "visits", visit.id), { parkingSpaceNumber: newSpaceNumber });
+}
+
+/**
+ * Visitas por rango de fecha que parquearon en el espacio del propietario
+ * (entryMode "ownerSpace") — usado por fetchFrequentVisitorAlerts() en
+ * parking.service.js para poder detectar patrones de placas repetidas
+ * incluso cuando el vehículo no usó un parqueo compartido de visita (esas
+ * nunca quedan en parking_sessions).
+ */
+export async function fetchOwnerSpaceVisitsSince(since) {
+  const snap = await getDocs(query(collection(db, "visits"), where("createdAt", ">=", since), orderBy("createdAt", "desc")));
+  return snap.docs.map((d) => d.data()).filter((v) => v.entryMode === "ownerSpace");
 }
 
 export async function fetchRecentVisits(max = 100) {
