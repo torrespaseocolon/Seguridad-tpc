@@ -1,6 +1,7 @@
 import { el, clear, loadingState, toast } from "../../utils/dom.js";
 import { icon } from "../../utils/icons.js";
 import { fetchParkingHistory } from "../../services/parking.service.js";
+import { fetchVisitHistory } from "../../services/visits.service.js";
 import { fetchPackageHistory } from "../../services/packages.service.js";
 import { fetchLoanHistory } from "../../services/objects.service.js";
 import { fetchAccessItemHistory } from "../../services/access-items.service.js";
@@ -13,6 +14,7 @@ import { createDestinationField } from "../../utils/destination-field.js";
 import { destinationLabel } from "../../utils/destination.js";
 
 const REPORTS = [
+  { id: "visits", label: "Visitantes" },
   { id: "parking", label: "Parqueos" },
   { id: "packages", label: "Paquetes" },
   { id: "loans", label: "Préstamos" },
@@ -32,7 +34,7 @@ const RANGE_MAX = 2000;
 
 export function renderReportsTab(root) {
   clear(root);
-  let active = "parking";
+  let active = "visits";
   const tabBar = el("div", { class: "row", style: "flex-wrap:wrap; gap:8px; margin-bottom:16px;" });
 
   const fromInput = el("input", { class: "form-control", type: "date" });
@@ -92,7 +94,8 @@ export function renderReportsTab(root) {
     content.appendChild(loadingState("Consultando historial..."));
     const range = getRange();
     try {
-      if (active === "parking") await renderParking(content, range);
+      if (active === "visits") await renderVisits(content, range);
+      else if (active === "parking") await renderParking(content, range);
       else if (active === "packages") await renderPackages(content, range);
       else if (active === "loans") await renderLoans(content, range);
       else if (active === "access") await renderAccess(content, range);
@@ -115,6 +118,30 @@ function maxFor(defaultMax, range) {
 /** Filtra en el navegador (ya se trajeron los datos para el CSV) por el código exacto de apartamento/oficina. */
 function filterByDest(rows, destCode, field) {
   return destCode ? rows.filter((r) => r[field] === destCode) : rows;
+}
+
+/** Misma lógica que modeBadge()/modeDescription() en visits.page.js, repetida acá porque esa pantalla no exporta nada — solo texto plano, no hace falta un badge. */
+function visitModeLabel(v) {
+  const mode = v.entryMode || (v.needsParking ? "parking" : null);
+  if (mode === "parking") return `Parqueo de visita ${v.parkingSpaceNumber || "?"}`;
+  if (mode === "ownerSpace") return `Espacio propio (placa ${v.plate || "sin placa"})`;
+  if (mode === "pedestrian") return "Ingreso peatonal";
+  return "Sin registrar";
+}
+
+async function renderVisits(content, range) {
+  const rows = filterByDest(await fetchVisitHistory({ max: maxFor(DEFAULT_MAX, range), ...range }), range.destCode, "destinationNumber");
+  clear(content);
+  content.appendChild(el("div", { class: "card__title" }, "Visitas por día"));
+  content.appendChild(barChart(bucketByDay(rows, "createdAt")));
+  content.appendChild(exportButton("historial_visitantes.csv", rows.map((r) => ({
+    nombre: r.visitorName, cedula: r.visitorId, telefono: r.visitorPhone,
+    destino: destinationLabel(r.destinationType, r.destinationNumber),
+    modalidad: visitModeLabel(r), placa: r.plate || "", parqueo: r.parkingSpaceNumber || "",
+    entrada: formatDateTime(r.createdAt), salida: formatDateTime(r.exitAt),
+    registrado_por: r.createdByName, lobby: r.lobby || "", notas: r.notes || "",
+  }))));
+  content.appendChild(simpleList(rows, (r) => `${r.visitorName} — ${visitModeLabel(r)} (${formatDateTime(r.createdAt)})`));
 }
 
 async function renderParking(content, range) {
