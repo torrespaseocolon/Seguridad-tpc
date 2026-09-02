@@ -15,7 +15,7 @@ import { getProfile } from "../services/auth.service.js";
 import { formatDateTime } from "../utils/time.js";
 import { navigate } from "../router.js";
 import { friendlyError } from "../utils/errors.js";
-import { showConsultaQr } from "./parking.page.js";
+import { showConsultaQr, openCorrectSpaceModal } from "./parking.page.js";
 
 // Misma restricción que en Parqueos: la entrada física real de vehículos
 // está solo en Lobby B, así que solo ese guardia (o un administrador) puede
@@ -468,9 +468,11 @@ function openAssignSpaceModal(visitorData, reload, onBack) {
  * Menú de corrección para una visita ya registrada — ver pedido explícito
  * de administración: se le indicó al visitante una modalidad (parqueo
  * compartido / espacio del propietario / a pie) pero terminó haciendo otra
- * por un malentendido con el guardia. Solo ofrece las 2 modalidades
- * distintas a la actual; cada una decide si hace falta liberar o crear un
- * parqueo compartido real antes de guardar la corrección.
+ * por un malentendido con el guardia, o quedó en el espacio de parqueo
+ * equivocado. Ofrece las modalidades distintas a la actual (cada una decide
+ * si hace falta liberar o crear un parqueo compartido real) y, si ya estaba
+ * en "parking", también la opción de cambiar a otro espacio sin perder la
+ * hora real de entrada.
  */
 function openCorrectEntryModal(v, reload) {
   const currentMode = effectiveMode(v);
@@ -489,6 +491,36 @@ function openCorrectEntryModal(v, reload) {
     btn.addEventListener("click", () => {
       closeFn();
       openCorrectPickSpaceModal(v, reload);
+    });
+    buttons.push(btn);
+  } else {
+    // Ya estaba en "parking" — acá el error es CUÁL espacio, no la
+    // modalidad. Usa correctSessionSpace() (mueve la ocupación) en vez de
+    // liberar y crear una entrada nueva, para no perder la hora real de
+    // entrada — mismo botón que ya existe en Parqueos, reutilizado acá para
+    // no obligar a ir a esa pantalla.
+    const btn = el("button", { class: "btn btn--secondary btn--block btn--lg" }, [icon("refresh", { size: 18 }), " CAMBIAR A OTRO PARQUEO DE VISITA"]);
+    btn.addEventListener("click", async () => {
+      if (!v.parkingSessionId) return;
+      btn.disabled = true;
+      try {
+        const session = await fetchSessionById(v.parkingSessionId);
+        if (!session || session.status !== "open") {
+          toast("Ese parqueo ya no está abierto.", "info");
+          btn.disabled = false;
+          return;
+        }
+        if (session.vehicleKind === "moto") {
+          toast("Las motos comparten un solo espacio de parqueo — no aplica este tipo de corrección.", "info");
+          btn.disabled = false;
+          return;
+        }
+        closeFn();
+        openCorrectSpaceModal({ number: v.parkingSpaceNumber, sessionId: v.parkingSessionId, plate: session.plate || "" }, reload);
+      } catch (err) {
+        toast(friendlyError(err), "danger");
+        btn.disabled = false;
+      }
     });
     buttons.push(btn);
   }

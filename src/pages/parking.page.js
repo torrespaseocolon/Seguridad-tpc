@@ -620,7 +620,7 @@ function openExitModal(space) {
  * lista espacios de carro libres, sin motos (no tiene sentido "cambiar de
  * espacio" cuando todas las motos comparten el mismo número físico).
  */
-function openCorrectSpaceModal(space, onDone) {
+export function openCorrectSpaceModal(space, onDone) {
   const listBox = el("div", { class: "stack", style: "max-height:280px; overflow-y:auto;" });
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const content = el("div", { class: "stack" }, [
