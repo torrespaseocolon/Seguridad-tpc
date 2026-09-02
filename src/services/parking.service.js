@@ -485,13 +485,16 @@ export async function registerVisitExit(sessionId, spaceNumber) {
  * Espacios de visita libres (carro y moto, con cupos) disponibles para
  * asignar o corregir el parqueo de una visita — mismo cálculo que usa
  * Parqueos para las motos (cuenta sesiones abiertas, ver nota de motos más
- * arriba), reutilizado también desde Visitantes.
+ * arriba), reutilizado también desde Visitantes. Incluye los espacios de
+ * discapacidad (antes solo los "visitor") — a un visitante también se le
+ * puede asignar uno si hace falta, igual que ya se podía hacer entrando
+ * directo desde Parqueos.
  */
 export async function fetchAvailableVisitorSpaces() {
   const snap = await getDocs(collection(db, "parking_spaces"));
   const allSpaces = snap.docs.map((d) => d.data());
   const options = allSpaces
-    .filter((s) => s.type === "visitor" && s.status === "free")
+    .filter((s) => (s.type === "visitor" || s.type === "disability") && s.status === "free")
     .map((s) => ({ ...s, vehicleKind: "car" }));
 
   for (const space of allSpaces.filter((s) => s.type === "moto")) {
@@ -819,6 +822,12 @@ export async function reopenSession(sessionId, note) {
   reopenLinkedVisit(sessionId).catch((err) => console.error("[SEGURIDAD TPC] No se pudo reabrir la visita vinculada:", err));
 
   return { ok: true };
+}
+
+/** Lectura puntual de un registro por su ID — usado para recuperar la placa ya guardada al corregir una visita (ver openCorrectEntryModal en visits.page.js). */
+export async function fetchSessionById(sessionId) {
+  const snap = await getDoc(doc(db, "parking_sessions", sessionId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
 /** Búsqueda puntual por placa, para la pantalla de correcciones administrativas. */

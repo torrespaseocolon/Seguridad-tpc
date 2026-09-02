@@ -7,6 +7,7 @@ import {
   registerMotoEntry,
   registerVisitExit,
   fetchAvailableVisitorSpaces,
+  fetchSessionById,
   OperationError,
 } from "../services/parking.service.js";
 import { createVisit, updateVisitEntry, markVisitExited, fetchRecentVisits, fetchVisitHistory } from "../services/visits.service.js";
@@ -367,7 +368,7 @@ function openSpacePickerModal({ title, confirmLabel, initialPlate = "", extraFoo
         const label =
           space.vehicleKind === "moto"
             ? `Parqueo ${space.number} — Moto (${space.motoOccupied}/${space.motoCapacity} ocupadas)`
-            : `Parqueo ${space.number}`;
+            : `Parqueo ${space.number}${space.type === "disability" ? " (discapacidad)" : ""}`;
         const row = el("div", { class: "card", style: "cursor:pointer; border-width:2px;" }, label);
         row.addEventListener("click", () => {
           selectedSpace = space;
@@ -473,6 +474,12 @@ function openAssignSpaceModal(visitorData, reload, onBack) {
  */
 function openCorrectEntryModal(v, reload) {
   const currentMode = effectiveMode(v);
+  // La placa solo hace falta PEDIRLA si el registro actual no tenía ninguna
+  // guardada todavía (venía marcado como ingreso peatonal). Si ya era
+  // "parking" (la placa vive en la sesión de parqueo vinculada) u
+  // "ownerSpace" (la placa ya está en v.plate), se reutiliza sin volver a
+  // escribirla — ver applySimpleCorrection más abajo.
+  const needsPlateInput = currentMode === "pedestrian";
   const plateInput = el("input", { class: "form-control", style: "text-transform:uppercase;", value: v.plate || "" });
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
   const buttons = [];
@@ -489,11 +496,18 @@ function openCorrectEntryModal(v, reload) {
   async function applySimpleCorrection(btn, targetMode) {
     let plate = null;
     if (targetMode === "ownerSpace") {
-      plate = plateInput.value.trim().toUpperCase();
-      if (!plate) {
-        errorBox.textContent = "Ingrese la placa del vehículo.";
-        errorBox.style.display = "block";
-        return;
+      if (needsPlateInput) {
+        plate = plateInput.value.trim().toUpperCase();
+        if (!plate) {
+          errorBox.textContent = "Ingrese la placa del vehículo.";
+          errorBox.style.display = "block";
+          return;
+        }
+      } else if (currentMode === "parking" && v.parkingSessionId) {
+        const session = await fetchSessionById(v.parkingSessionId);
+        plate = session?.plate || null;
+      } else {
+        plate = v.plate || null; // currentMode === "ownerSpace": ya la tenía
       }
     }
     errorBox.style.display = "none";
@@ -535,7 +549,7 @@ function openCorrectEntryModal(v, reload) {
     [
       el("div", { class: "modal__title" }, `Corregir ingreso — ${v.visitorName}`),
       el("div", { class: "text-secondary mb-md" }, `Actualmente: ${modeDescription(v)}`),
-      field("Placa (solo si va a quedar en el espacio del propietario)", plateInput),
+      needsPlateInput ? field("Placa (solo si va a quedar en el espacio del propietario)", plateInput) : null,
       errorBox,
       ...buttons,
     ].filter(Boolean)

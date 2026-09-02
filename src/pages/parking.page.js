@@ -414,7 +414,7 @@ function openEntryModal(space) {
   const nameInput = el("input", { class: "form-control", required: true });
   const idInput = el("input", { class: "form-control", required: true });
   const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
-  const phoneInput = el("input", { class: "form-control", type: "tel", required: true, placeholder: "Ej. 8888 8888" });
+  const phoneInput = el("input", { class: "form-control", type: "tel", placeholder: "Ej. 8888 8888" });
 
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
@@ -500,7 +500,7 @@ function openEntryModal(space) {
       field("Nombre", nameInput),
       field("Cédula", idInput),
       field("Placa", plateInput),
-      field("Teléfono *", phoneInput),
+      field("Teléfono", phoneInput),
       field("Categoría", categorySelect),
       destFieldWrapper,
       destField.hint,
@@ -675,7 +675,7 @@ function openMotoEntryModal(space) {
   const nameInput = el("input", { class: "form-control", required: true });
   const idInput = el("input", { class: "form-control", required: true });
   const plateInput = el("input", { class: "form-control", required: true, style: "text-transform:uppercase;" });
-  const phoneInput = el("input", { class: "form-control", type: "tel", required: true, placeholder: "Ej. 8888 8888" });
+  const phoneInput = el("input", { class: "form-control", type: "tel", placeholder: "Ej. 8888 8888" });
 
   const defaultTower = profile.lobby === "A" || profile.lobby === "B" ? profile.lobby : "A";
   const destField = createDestinationField({ defaultTower, required: true });
@@ -757,7 +757,7 @@ function openMotoEntryModal(space) {
       field("Nombre", nameInput),
       field("Cédula", idInput),
       field("Placa", plateInput),
-      field("Teléfono *", phoneInput),
+      field("Teléfono", phoneInput),
       field("Categoría", categorySelect),
       destFieldWrapper,
       destField.hint,
