@@ -335,7 +335,9 @@ function renderMotoSlot(space, session) {
       ]),
       el("div", { class: "row", style: "gap:10px; align-items:center;" }, [
         canOperate ? null : el("span", { class: "badge badge--info" }, "CONSULTA"),
-        el("div", { class: "timer mono", id: `moto-timer-${session.id}` }, formatElapsed(session.entryAt)),
+        session.destinationType === PROVIDER_DESTINATION_TYPE
+          ? null
+          : el("div", { class: "timer mono", id: `moto-timer-${session.id}` }, formatElapsed(session.entryAt)),
       ].filter(Boolean)),
     ]
   );
@@ -384,7 +386,11 @@ function renderSpaceCard(space) {
     children.push(el("span", { class: "badge badge--occupied" }, [el("span", { class: "status-dot" }), "OCUPADO"]));
     children.push(el("div", { style: "font-weight:700;" }, space.visitorName || ""));
     children.push(el("div", { class: "text-secondary" }, `${space.plate || ""} · Apt. ${space.destinationNumber || ""}`));
-    children.push(el("div", { class: "timer mono", id: `timer-${space.number}` }, formatElapsed(space.entryAt)));
+    // Proveedor/Administración no tiene límite de tiempo (ver maxMinutesForDestination
+    // en parking.service.js) — mostrarle un cronómetro corriendo no aporta nada.
+    if (space.destinationType !== PROVIDER_DESTINATION_TYPE) {
+      children.push(el("div", { class: "timer mono", id: `timer-${space.number}` }, formatElapsed(space.entryAt)));
+    }
   }
 
   return el("div", {
@@ -415,7 +421,7 @@ function openEntryModal(space) {
 
   const categorySelect = el("select", { class: "form-control" }, [
     el("option", { value: "visitor" }, "Visitante"),
-    el("option", { value: "provider" }, "Proveedor (sin límite de tiempo, no visita una unidad puntual)"),
+    el("option", { value: "provider" }, "Proveedor / Administración"),
   ]);
   const destFieldWrapper = field("Torre + piso + unidad", destField.input);
   categorySelect.addEventListener("change", () => {
@@ -510,8 +516,12 @@ function openEntryModal(space) {
 function openExitModal(space) {
   const profile = getProfile();
   const canOperate = canOperateParking(profile);
+  const isProvider = space.destinationType === PROVIDER_DESTINATION_TYPE;
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
-  const timerEl = el("div", { class: "timer mono", id: "exit-modal-timer" }, formatElapsed(space.entryAt));
+  // Proveedor/Administración no tiene límite de tiempo — no tiene sentido
+  // mostrarle un cronómetro corriendo ni avisarle por WhatsApp que "se le
+  // acaba el tiempo".
+  const timerEl = isProvider ? null : el("div", { class: "timer mono", id: "exit-modal-timer" }, formatElapsed(space.entryAt));
   const confirmBtn = canOperate ? el("button", { class: "btn btn--danger btn--block btn--lg" }, "REGISTRAR SALIDA") : null;
   const readOnlyNote = canOperate
     ? null
@@ -522,7 +532,7 @@ function openExitModal(space) {
   });
 
   let whatsappBtn = null;
-  if (space.visitorPhone) {
+  if (space.visitorPhone && !isProvider) {
     const link = whatsappLink(
       space.visitorPhone,
       `Hola${space.visitorName ? " " + space.visitorName : ""}, le escribimos de seguridad Torres Paseo Colón: su tiempo de parqueo en el espacio ${space.number} está por vencer (o ya venció). Si necesita más tiempo, avísenos y con gusto se lo extendemos.`
@@ -560,7 +570,7 @@ function openExitModal(space) {
       row("Entrada", formatDateTime(space.entryAt)),
       row("Registrado por", `${space.entryGuardName || ""} (Lobby ${space.entryLobby || "-"})`),
     ]),
-    el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
+    isProvider ? null : el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
     qrBtn,
     whatsappBtn,
     correctSpaceBtn,
@@ -569,9 +579,11 @@ function openExitModal(space) {
     confirmBtn,
   ].filter(Boolean));
 
-  const tickerStop = startLocalTicker(() => {
-    timerEl.textContent = formatElapsed(space.entryAt);
-  });
+  const tickerStop = isProvider
+    ? () => {}
+    : startLocalTicker(() => {
+        timerEl.textContent = formatElapsed(space.entryAt);
+      });
 
   const closeFn = openModal(content);
   const originalClose = closeFn;
@@ -670,7 +682,7 @@ function openMotoEntryModal(space) {
 
   const categorySelect = el("select", { class: "form-control" }, [
     el("option", { value: "visitor" }, "Visitante"),
-    el("option", { value: "provider" }, "Proveedor (sin límite de tiempo, no visita una unidad puntual)"),
+    el("option", { value: "provider" }, "Proveedor / Administración"),
   ]);
   const destFieldWrapper = field("Torre + piso + unidad", destField.input);
   categorySelect.addEventListener("change", () => {
@@ -761,8 +773,9 @@ function openMotoEntryModal(space) {
 function openMotoExitModal(space, session) {
   const profile = getProfile();
   const canOperate = canOperateParking(profile);
+  const isProvider = session.destinationType === PROVIDER_DESTINATION_TYPE;
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
-  const timerEl = el("div", { class: "timer mono", id: "exit-modal-timer" }, formatElapsed(session.entryAt));
+  const timerEl = isProvider ? null : el("div", { class: "timer mono", id: "exit-modal-timer" }, formatElapsed(session.entryAt));
   const confirmBtn = canOperate ? el("button", { class: "btn btn--danger btn--block btn--lg" }, "REGISTRAR SALIDA") : null;
   const readOnlyNote = canOperate
     ? null
@@ -771,7 +784,7 @@ function openMotoExitModal(space, session) {
   qrBtn.addEventListener("click", () => showConsultaQr(`${space.number} (moto)`, buildConsultaUrl(session.id), null, { name: session.visitorName, phone: session.visitorPhone }));
 
   let whatsappBtn = null;
-  if (session.visitorPhone) {
+  if (session.visitorPhone && !isProvider) {
     const link = whatsappLink(
       session.visitorPhone,
       `Hola${session.visitorName ? " " + session.visitorName : ""}, le escribimos de seguridad Torres Paseo Colón: su tiempo de parqueo de moto en el espacio ${space.number} está por vencer (o ya venció). Si necesita más tiempo, avísenos y con gusto se lo extendemos.`
@@ -795,7 +808,7 @@ function openMotoExitModal(space, session) {
       row("Entrada", formatDateTime(session.entryAt)),
       row("Registrado por", `${session.entryGuardName || ""} (Lobby ${session.entryLobby || "-"})`),
     ]),
-    el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
+    isProvider ? null : el("div", { class: "text-center" }, [el("div", { class: "text-secondary" }, "Tiempo transcurrido"), timerEl]),
     qrBtn,
     whatsappBtn,
     readOnlyNote,
@@ -803,9 +816,11 @@ function openMotoExitModal(space, session) {
     confirmBtn,
   ].filter(Boolean));
 
-  const tickerStop = startLocalTicker(() => {
-    timerEl.textContent = formatElapsed(session.entryAt);
-  });
+  const tickerStop = isProvider
+    ? () => {}
+    : startLocalTicker(() => {
+        timerEl.textContent = formatElapsed(session.entryAt);
+      });
 
   const closeFn = openModal(content);
 

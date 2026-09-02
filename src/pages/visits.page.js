@@ -213,7 +213,7 @@ function openNewVisitModal(reload, prefill = null) {
   // mantenimiento o administración sin una unidad puntual a la que visitar.
   const categorySelect = el("select", { class: "form-control" }, [
     el("option", { value: "visitor" }, "Visitante"),
-    el("option", { value: "provider" }, "Proveedor (no visita una unidad puntual)"),
+    el("option", { value: "provider" }, "Proveedor / Administración"),
   ]);
   categorySelect.value = isProviderPrefill ? "provider" : "visitor";
   const destFieldWrapper = field("Torre + piso + unidad — a quién visita *", destField.input);
