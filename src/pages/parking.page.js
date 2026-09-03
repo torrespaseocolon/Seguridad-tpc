@@ -428,6 +428,11 @@ function openEntryModal(space) {
     const isProvider = categorySelect.value === "provider";
     destFieldWrapper.style.display = isProvider ? "none" : "";
     destField.hint.style.display = isProvider ? "none" : "";
+    // Al ocultarlo también hay que quitarle el "required" del navegador —
+    // si no, el formulario puede quedarse sin enviarse en silencio (el
+    // navegador bloquea el envío por un campo obligatorio vacío que ni
+    // siquiera se ve en pantalla).
+    destField.input.required = !isProvider;
   });
 
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
@@ -689,6 +694,11 @@ function openMotoEntryModal(space) {
     const isProvider = categorySelect.value === "provider";
     destFieldWrapper.style.display = isProvider ? "none" : "";
     destField.hint.style.display = isProvider ? "none" : "";
+    // Al ocultarlo también hay que quitarle el "required" del navegador —
+    // si no, el formulario puede quedarse sin enviarse en silencio (el
+    // navegador bloquea el envío por un campo obligatorio vacío que ni
+    // siquiera se ve en pantalla).
+    destField.input.required = !isProvider;
   });
 
   const errorBox = el("div", { class: "form-error", style: "display:none;" });
