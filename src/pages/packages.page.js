@@ -66,7 +66,7 @@ export function renderPackages(root) {
 function renderPackageCard(pkg, reload) {
   const days = elapsedDays(pkg.createdAt);
   const isOld = days >= OLD_PENDING_DAYS;
-  const deliverBtn = el("button", { class: "btn btn--success btn--block" }, "ENTREGADO");
+  const deliverBtn = el("button", { class: "btn btn--success btn--block" }, "ENTREGAR");
   deliverBtn.addEventListener("click", () => openDeliverPackageModal(pkg, reload));
 
   return el("div", { class: "card", style: isOld ? "border-color:var(--color-danger);" : "" }, [

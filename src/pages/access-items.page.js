@@ -57,7 +57,7 @@ export function renderAccessItems(root) {
 function renderCard(item, reload) {
   const days = elapsedDays(item.createdAt);
   const isOld = days >= OLD_PENDING_DAYS;
-  const deliverBtn = el("button", { class: "btn btn--success btn--block" }, "ENTREGADO");
+  const deliverBtn = el("button", { class: "btn btn--success btn--block" }, "ENTREGAR");
   deliverBtn.addEventListener("click", async () => {
     const ok = await confirmDialog({
       title: "Confirmar entrega",
@@ -74,7 +74,7 @@ function renderCard(item, reload) {
     } catch (err) {
       toast(friendlyError(err), "danger");
       deliverBtn.disabled = false;
-      deliverBtn.textContent = "ENTREGADO";
+      deliverBtn.textContent = "ENTREGAR";
     }
   });
 
