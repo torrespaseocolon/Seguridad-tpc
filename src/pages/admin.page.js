@@ -7,6 +7,7 @@ import { renderUsersTab } from "./admin/users.tab.js";
 import { renderParkingConfigTab } from "./admin/parking-config.tab.js";
 import { renderObjectsConfigTab } from "./admin/objects-config.tab.js";
 import { renderAccessItemsAdminTab } from "./admin/access-items-admin.tab.js";
+import { renderOfficesTab } from "./admin/offices.tab.js";
 import { renderReportsTab } from "./admin/reports.tab.js";
 import { renderCorrectionsTab } from "./admin/corrections.tab.js";
 import { renderDemoTab } from "./admin/demo.tab.js";
@@ -18,6 +19,7 @@ const TABS = [
   { id: "parking", label: "Parqueos", render: renderParkingConfigTab },
   { id: "objects", label: "Objetos", render: renderObjectsConfigTab },
   { id: "access", label: "Tarjetas/Stickers", render: renderAccessItemsAdminTab },
+  { id: "offices", label: "Directorio de oficinas", render: renderOfficesTab },
   { id: "reports", label: "Reportes e historial", render: renderReportsTab },
   { id: "corrections", label: "Correcciones", render: renderCorrectionsTab },
   { id: "demo", label: "Demostración", render: renderDemoTab },

@@ -1,5 +1,6 @@
 import { subscribeAuth, logout, getProfile } from "./services/auth.service.js";
 import { subscribeSettings } from "./services/settings.service.js";
+import { subscribeOfficeDirectory } from "./services/offices.service.js";
 import { subscribeConnectivity } from "./utils/connectivity.js";
 import { el, clear } from "./utils/dom.js";
 import { icon } from "./utils/icons.js";
@@ -168,6 +169,7 @@ subscribeAuth((state) => {
   // entrada.
   if (!settingsSubscribed) {
     subscribeSettings();
+    subscribeOfficeDirectory();
     settingsSubscribed = true;
   }
 

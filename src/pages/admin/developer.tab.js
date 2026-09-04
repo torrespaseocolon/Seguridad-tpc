@@ -27,7 +27,7 @@ import { firebaseConfig } from "../../firebase/firebase-config.js";
 // Mantener igual al CACHE_NAME de service-worker.js — no hay forma de leerlo
 // automáticamente desde acá (son dos archivos totalmente separados), así que
 // hay que actualizar esta línea a mano cuando se suba una versión nueva.
-const APP_VERSION = "seguridad-tpc-v57";
+const APP_VERSION = "seguridad-tpc-v58";
 
 // public_status queda afuera a propósito: firestore.rules bloquea "list" en
 // esa colección sin excepción (ni siquiera para administración) — solo se
@@ -48,6 +48,7 @@ const BACKUP_COLLECTIONS = [
   "audit_logs",
   "error_reports",
   "settings",
+  "offices",
 ];
 
 // Colecciones que "Reiniciar datos del sistema" borra por completo. users y

@@ -18,6 +18,7 @@ import {
   parseDestinationCode,
   MAX_FLOOR,
 } from "./destination.js";
+import { getOfficeInfo } from "../services/offices.service.js";
 
 /** Deja solo lo permitido: primer carácter A o B, hasta 4 dígitos después. */
 function sanitize(raw) {
@@ -76,7 +77,17 @@ export function createDestinationField({ defaultTower = "A", required = true, in
     }
     const code = buildDestinationCode(tower, digits);
     const suggested = isValidDigits(digits) ? suggestDestinationType(tower, digits) : null;
-    hint.textContent = `Se guardará como: ${code}${suggested ? ` (${suggested === "office" ? "Oficina/Comercio" : "Apartamento"})` : ""}`;
+    let text = `Se guardará como: ${code}${suggested ? ` (${suggested === "office" ? "Oficina/Comercio" : "Apartamento"})` : ""}`;
+    // Si es una oficina/comercio y administración ya cargó su teléfono en el
+    // directorio, se muestra ahí mismo para que el guardia pueda llamar a
+    // consultar sobre una visita o un paquete, sin salir del formulario.
+    if (suggested === "office") {
+      const office = getOfficeInfo(code);
+      if (office && (office.name || office.phone)) {
+        text += ` · ${office.name || "Sin nombre registrado"}${office.phone ? ` · Tel. ${office.phone}` : ""}`;
+      }
+    }
+    hint.textContent = text;
   }
   input.addEventListener("input", refresh);
   refresh();

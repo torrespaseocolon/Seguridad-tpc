@@ -416,6 +416,25 @@ service cloud.firestore {
     }
 
     // -------------------------------------------------------------------
+    // offices — directorio de teléfonos de oficinas/comercios (ago-2026),
+    // para que el guardia vea el teléfono al escribir el código en el campo
+    // "Torre + piso + unidad" de Parqueos/Visitantes/Paquetes/Tarjetas (ver
+    // destination-field.js). El ID del documento ES el código canónico
+    // ("B-203"). Solo lectura para el guardia — administración es quien
+    // carga y mantiene la lista.
+    // -------------------------------------------------------------------
+    match /offices/{code} {
+      allow read: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'guard' ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'viewer');
+      allow write: if isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // -------------------------------------------------------------------
     // audit_logs — nadie puede EDITAR un registro (integridad de cada
     // entrada). Ago-2026 v2: a pedido explícito de administración, un admin
     // sí puede BORRAR registros en bloque (por ejemplo desde
