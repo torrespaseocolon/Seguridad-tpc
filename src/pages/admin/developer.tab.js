@@ -10,6 +10,10 @@ import { icon } from "../../utils/icons.js";
 import { db } from "../../firebase/firebase-init.js";
 import {
   collection,
+  query,
+  where,
+  orderBy,
+  limit as fbLimit,
   getDocs,
   getCountFromServer,
   deleteDoc,
@@ -27,7 +31,7 @@ import { firebaseConfig } from "../../firebase/firebase-config.js";
 // Mantener igual al CACHE_NAME de service-worker.js — no hay forma de leerlo
 // automáticamente desde acá (son dos archivos totalmente separados), así que
 // hay que actualizar esta línea a mano cuando se suba una versión nueva.
-const APP_VERSION = "seguridad-tpc-v58";
+const APP_VERSION = "seguridad-tpc-v59";
 
 // public_status queda afuera a propósito: firestore.rules bloquea "list" en
 // esa colección sin excepción (ni siquiera para administración) — solo se
@@ -70,13 +74,85 @@ const WIPE_COLLECTIONS = [
   "error_reports",
 ];
 
+// Aviso informativo cuando una colección supera esta cantidad de documentos
+// — NO es un límite real de Firestore (que es por espacio ocupado, ~1 GB en
+// el plan gratis, no por cantidad de documentos), es solo una señal para
+// considerar usar la depuración manual de abajo. Con datos de solo texto
+// como estos (sin fotos), falta mucho para llegar al límite real de
+// espacio — este número es fácil de ajustar acá si hace falta.
+const COUNT_WARNING_THRESHOLD = 5000;
+
+/**
+ * Colecciones con historial que puede crecer sin límite, purgables por
+ * fecha desde "Depuración manual" más abajo. Cada una define cómo
+ * identificar un documento TODAVÍA ACTIVO (`isActive`) — esos nunca se
+ * borran sin importar qué tan viejos sean, aunque queden antes de la fecha
+ * de corte elegida. `objects` (el catálogo en sí, no los préstamos) queda
+ * afuera a propósito: no es historial, es una lista de referencia que no
+ * crece con el uso diario.
+ */
+const PURGE_TARGETS = [
+  { name: "parking_sessions", label: "Parqueos", dateField: "entryAt", isActive: (d) => d.status === "open" },
+  { name: "visits", label: "Visitantes", dateField: "createdAt", isActive: (d) => d.needsParking === true && !d.exitAt },
+  { name: "packages", label: "Paquetes", dateField: "createdAt", isActive: (d) => d.status === "pending" },
+  { name: "access_items", label: "Tarjetas/Stickers", dateField: "createdAt", isActive: (d) => d.status === "pending" },
+  { name: "found_items", label: "Objetos encontrados", dateField: "createdAt", isActive: (d) => d.status === "pending" },
+  { name: "object_loans", label: "Préstamos", dateField: "loanedAt", isActive: (d) => d.status === "loaned" },
+  { name: "audit_logs", label: "Auditoría", dateField: "createdAt", isActive: () => false },
+  { name: "error_reports", label: "Reportes de error", dateField: "createdAt", isActive: (d) => d.status === "open" },
+];
+
+/** El documento más viejo (según su campo de fecha) de cada colección purgable — 1 lectura chica por colección. */
+async function fetchOldestDates() {
+  const results = {};
+  for (const target of PURGE_TARGETS) {
+    const snap = await getDocs(query(collection(db, target.name), orderBy(target.dateField, "asc"), fbLimit(1)));
+    results[target.name] = snap.empty ? null : snap.docs[0].data()[target.dateField];
+  }
+  return results;
+}
+
+/**
+ * Trae, por cada colección purgable, los documentos anteriores a `cutoff`
+ * que YA NO están activos — una sola condición por consulta (rango de
+ * fecha), sin índice compuesto, filtrando "activo" en el navegador después
+ * (mismo patrón que fetchFrequentVisitorAlerts en parking.service.js).
+ */
+async function previewPurge(cutoff) {
+  const results = [];
+  for (const target of PURGE_TARGETS) {
+    const snap = await getDocs(query(collection(db, target.name), where(target.dateField, "<", cutoff)));
+    const purgeableDocs = snap.docs.filter((d) => !target.isActive(d.data()));
+    results.push({ ...target, docs: purgeableDocs });
+  }
+  return results;
+}
+
+/** Borra exactamente lo que previewPurge() ya identificó — no vuelve a consultar nada, para no borrar algo distinto a lo que el admin confirmó ver. */
+async function executePurge(preview, cutoff, log) {
+  for (const target of preview) {
+    for (const d of target.docs) {
+      await deleteDoc(doc(db, target.name, d.id));
+      if (target.name === "parking_sessions") {
+        // Puede que ya no exista (ver nota de public_status en wipeAllData) — no es un error si falla.
+        await deleteDoc(doc(db, "public_status", d.id)).catch(() => {});
+      }
+    }
+    log(`${target.label}: ${target.docs.length} documento(s) eliminado(s).`);
+  }
+  await logAudit("system.purge_old_records", {
+    details: { cutoff: cutoff.toISOString(), counts: preview.map((t) => ({ name: t.name, count: t.docs.length })) },
+  });
+}
+
 export async function renderDeveloperTab(root) {
   clear(root);
   root.appendChild(loadingState("Cargando panel de desarrollador..."));
 
   try {
-    const [counts, recentAudit, settings] = await Promise.all([
+    const [counts, oldestDates, recentAudit, settings] = await Promise.all([
       Promise.all(BACKUP_COLLECTIONS.map((name) => getCountFromServer(collection(db, name)))),
+      fetchOldestDates(),
       fetchRecentAudit(300),
       getSettings(true),
     ]);
@@ -84,7 +160,9 @@ export async function renderDeveloperTab(root) {
     clear(root);
     root.appendChild(appInfoCard(settings));
     root.appendChild(countsCard(counts));
+    root.appendChild(oldestRecordsCard(oldestDates));
     root.appendChild(backupCard());
+    root.appendChild(purgeCard());
     root.appendChild(resetDataCard(root));
     root.appendChild(auditCard(recentAudit));
     root.appendChild(settingsEditorCard(settings));
@@ -124,7 +202,31 @@ function countsCard(counts) {
     el(
       "div",
       { class: "stack", style: "gap:6px;" },
-      BACKUP_COLLECTIONS.map((name, i) => infoRow(name, String(counts[i].data().count)))
+      BACKUP_COLLECTIONS.map((name, i) => {
+        const count = counts[i].data().count;
+        const isHigh = count >= COUNT_WARNING_THRESHOLD;
+        return el("div", { class: "row row--between" }, [
+          el("span", { class: "text-secondary" }, name),
+          el("strong", { style: isHigh ? "color:var(--color-danger);" : "" }, isHigh ? `${count} ⚠` : String(count)),
+        ]);
+      })
+    ),
+    el(
+      "div",
+      { class: "form-hint mt-md" },
+      `El ⚠ es un aviso informativo (más de ${COUNT_WARNING_THRESHOLD.toLocaleString("es-CR")} documentos), no un límite real de Firestore — solo una señal para considerar usar la "Depuración manual" de abajo.`
+    ),
+  ]);
+}
+
+/** Desde qué fecha hay historial disponible en cada pestaña — responde directo "qué margen de consulta tengo para un incidente futuro". */
+function oldestRecordsCard(oldestDates) {
+  return el("div", { class: "card mb-md" }, [
+    sectionTitle("info", "Dato más viejo guardado, por pestaña"),
+    el(
+      "div",
+      { class: "stack", style: "gap:6px;" },
+      PURGE_TARGETS.map((t) => infoRow(t.label, oldestDates[t.name] ? formatDateTime(oldestDates[t.name]) : "Sin registros"))
     ),
   ]);
 }
@@ -161,8 +263,118 @@ function backupCard() {
 
   return el("div", { class: "card mb-md" }, [
     sectionTitle("download", "Respaldo manual"),
-    el("div", { class: "text-secondary mb-md" }, "Descarga TODA la base de datos actual en un solo archivo .json, tal como está en este momento."),
+    el(
+      "div",
+      { class: "text-secondary mb-md" },
+      "Descarga TODA la base de datos actual (todas las pestañas: parqueos, visitantes, paquetes, tarjetas, objetos, préstamos, auditoría...) en un solo archivo .json, tal como está en este momento. Usalo antes de la depuración de abajo si querés conservar una copia de lo que se va a borrar."
+    ),
     downloadBtn,
+  ]);
+}
+
+/**
+ * Borra registros ya CERRADOS/ENTREGADOS/DEVUELTOS anteriores a una fecha
+ * elegida — a diferencia de "Reiniciar datos del sistema" (que borra TODO
+ * sin excepción), esto nunca toca lo que sigue activo ahora mismo (ver
+ * PURGE_TARGETS más arriba), sin importar su antigüedad. Primero muestra
+ * una vista previa (previewPurge) y solo borra lo que el admin ya vio y
+ * confirmó — nunca vuelve a consultar con una fecha distinta entre medio.
+ */
+function purgeCard() {
+  const dateInput = el("input", { class: "form-control", type: "date" });
+  const previewBtn = el("button", { class: "btn btn--secondary btn--block" }, "REVISAR QUÉ SE BORRARÍA");
+  const previewBox = el("div", { class: "stack mt-md" });
+  const confirmInput = el("input", { class: "form-control", placeholder: "Escriba BORRAR" });
+  const purgeBtn = el("button", { class: "btn btn--danger btn--block", disabled: true, style: "display:none;" }, "BORRAR ESTOS REGISTROS");
+  const logBox = el("div", { class: "stack mt-md" });
+  let lastPreview = null;
+  let lastCutoff = null;
+
+  confirmInput.addEventListener("input", () => {
+    purgeBtn.disabled = confirmInput.value.trim() !== "BORRAR";
+  });
+
+  previewBtn.addEventListener("click", async () => {
+    if (!dateInput.value) {
+      toast("Elegí una fecha.", "info");
+      return;
+    }
+    lastCutoff = new Date(`${dateInput.value}T00:00:00`);
+    lastPreview = null;
+    confirmInput.value = "";
+    purgeBtn.disabled = true;
+    purgeBtn.style.display = "none";
+    previewBtn.disabled = true;
+    previewBtn.textContent = "REVISANDO...";
+    clear(previewBox);
+    clear(logBox);
+    try {
+      lastPreview = await previewPurge(lastCutoff);
+      clear(previewBox);
+      const total = lastPreview.reduce((sum, t) => sum + t.docs.length, 0);
+      if (total === 0) {
+        previewBox.appendChild(el("div", { class: "empty-state" }, "No hay registros ya cerrados/entregados/devueltos anteriores a esa fecha."));
+      } else {
+        for (const t of lastPreview) {
+          if (t.docs.length > 0) previewBox.appendChild(infoRow(t.label, `${t.docs.length} para borrar`));
+        }
+        previewBox.appendChild(
+          el(
+            "div",
+            { class: "form-hint mt-md" },
+            "Lo que sigue activo ahora mismo (un parqueo ocupado, un paquete/tarjeta/objeto sin entregar, un préstamo sin devolver) nunca se incluye acá, sin importar qué tan viejo sea."
+          )
+        );
+        purgeBtn.style.display = "";
+      }
+    } catch (err) {
+      previewBox.appendChild(el("div", { class: "empty-state" }, friendlyError(err)));
+    }
+    previewBtn.disabled = false;
+    previewBtn.textContent = "REVISAR QUÉ SE BORRARÍA";
+  });
+
+  purgeBtn.addEventListener("click", async () => {
+    if (!lastPreview || !lastCutoff) return;
+    const total = lastPreview.reduce((sum, t) => sum + t.docs.length, 0);
+    const ok = await confirmDialog({
+      title: "Confirmar depuración",
+      body: `Esto borra PARA SIEMPRE ${total} registro(s) ya cerrados/entregados/devueltos, de antes del ${dateInput.value}. Si querés conservarlos, descargá primero el respaldo completo (arriba). Esta acción no se puede deshacer.`,
+      confirmText: "Sí, borrar",
+      danger: true,
+    });
+    if (!ok) return;
+    purgeBtn.disabled = true;
+    purgeBtn.textContent = "BORRANDO...";
+    clear(logBox);
+    try {
+      await executePurge(lastPreview, lastCutoff, (msg) => logBox.appendChild(el("div", { class: "text-secondary" }, msg)));
+      toast("Depuración completa.", "success");
+      lastPreview = null;
+      lastCutoff = null;
+      clear(previewBox);
+      confirmInput.value = "";
+      purgeBtn.style.display = "none";
+    } catch (err) {
+      toast(friendlyError(err), "danger");
+    }
+    purgeBtn.disabled = false;
+    purgeBtn.textContent = "BORRAR ESTOS REGISTROS";
+  });
+
+  return el("div", { class: "card mb-md" }, [
+    sectionTitle("warning", "Depuración manual de historial viejo"),
+    el(
+      "div",
+      { class: "text-secondary mb-md" },
+      "Borra registros ya cerrados/entregados/devueltos anteriores a una fecha, para liberar espacio — nunca toca lo que sigue activo (un parqueo ocupado, un paquete sin entregar, etc.), sin importar su antigüedad."
+    ),
+    field("Borrar registros anteriores a", dateInput),
+    previewBtn,
+    previewBox,
+    field("Escriba BORRAR para habilitar el botón", confirmInput),
+    purgeBtn,
+    logBox,
   ]);
 }
 
@@ -350,4 +562,8 @@ function linksCard() {
 
 function link(href, text) {
   return el("a", { href, target: "_blank", rel: "noopener", class: "btn btn--secondary btn--block" }, text);
+}
+
+function field(labelText, inputNode) {
+  return el("div", { class: "form-group" }, [el("label", { class: "form-label" }, labelText), inputNode]);
 }
