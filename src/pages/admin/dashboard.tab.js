@@ -10,7 +10,7 @@ import {
   orderBy,
   limit as fbLimit,
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
-import { elapsedMinutes, formatDateTime } from "../../utils/time.js";
+import { elapsedMinutes, formatDateTime, formatMinutesDuration } from "../../utils/time.js";
 import { friendlyError } from "../../utils/errors.js";
 import { fetchFrequentVisitorAlerts } from "../../services/parking.service.js";
 import { destinationLabel } from "../../utils/destination.js";
@@ -135,12 +135,24 @@ function frequentVisitorsCard(alerts) {
   );
 }
 
-/** Detalle de una alerta de visita frecuente: la fecha y hora exacta de cada una de las entradas contadas. */
+/** Cuánto tiempo permaneció parqueado en una entrada — para distinguir uso excesivo de un simple "de paso". */
+function describeEntryDuration(entry) {
+  if (!entry.hasParking) return "Parqueó en el espacio del propietario (no usó un parqueo compartido)";
+  if (entry.ongoing) return `Sigue parqueado ahora mismo — lleva ${formatMinutesDuration(entry.durationMinutes)}`;
+  return `Permaneció ${formatMinutesDuration(entry.durationMinutes)}`;
+}
+
+/** Detalle de una alerta de visita frecuente: fecha, hora y cuánto tiempo estuvo parqueado en cada una de las entradas contadas. */
 function openFrequentVisitorDetail(alert) {
   const list = el(
     "div",
     { class: "stack" },
-    alert.entries.map((when) => el("div", { class: "card" }, formatDateTime(when)))
+    alert.entries.map((entry) =>
+      el("div", { class: "card" }, [
+        el("strong", {}, formatDateTime(entry.when)),
+        el("div", { class: "text-secondary" }, describeEntryDuration(entry)),
+      ])
+    )
   );
   const content = el("div", { class: "stack" }, [
     el("div", { class: "modal__title" }, `${alert.plate} — ${destinationLabel(alert.destinationType, alert.destinationNumber)}`),

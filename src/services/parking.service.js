@@ -728,31 +728,43 @@ export async function fetchFrequentVisitorAlerts({ minVisits = 3 } = {}) {
   ]);
 
   const byKey = new Map();
-  function bump(plate, destinationNumber, destinationType, when) {
+  // Cada entrada guarda además cuánto tiempo estuvo parqueado (para
+  // distinguir uso excesivo de un simple "de paso"): `durationMinutes` para
+  // una sesión ya cerrada, o el tiempo transcurrido hasta ahora si sigue
+  // abierta (`ongoing: true`). Las visitas por "espacio de propietario"
+  // nunca ocupan un parqueo compartido, así que no tienen duración
+  // (`hasParking: false`).
+  function bump(plate, destinationNumber, destinationType, entry) {
     const key = `${plate}|${destinationNumber}`;
     if (!byKey.has(key)) {
-      byKey.set(key, { plate, destinationNumber, destinationType, count: 0, lastEntry: when, entries: [] });
+      byKey.set(key, { plate, destinationNumber, destinationType, count: 0, lastEntry: entry.when, entries: [] });
     }
-    const entry = byKey.get(key);
-    entry.count++;
-    entry.entries.push(when);
-    if ((toMillis(when) || 0) > (toMillis(entry.lastEntry) || 0)) entry.lastEntry = when;
+    const agg = byKey.get(key);
+    agg.count++;
+    agg.entries.push(entry);
+    if ((toMillis(entry.when) || 0) > (toMillis(agg.lastEntry) || 0)) agg.lastEntry = entry.when;
   }
 
   for (const d of sessionsSnap.docs) {
     const s = d.data();
     if (s.isDemo || !s.plate || !s.destinationNumber || s.destinationType === PROVIDER_DESTINATION_TYPE) continue;
-    bump(s.plate, s.destinationNumber, s.destinationType, s.entryAt);
+    const ongoing = s.status === "open";
+    bump(s.plate, s.destinationNumber, s.destinationType, {
+      when: s.entryAt,
+      hasParking: true,
+      ongoing,
+      durationMinutes: ongoing ? elapsedMinutes(s.entryAt) : s.durationMinutes,
+    });
   }
   // Nunca se pisan con las de arriba: "ownerSpace" jamás crea parking_sessions.
   for (const v of ownerSpaceVisits) {
     if (v.isDemo || !v.plate || !v.destinationNumber || v.destinationType === PROVIDER_DESTINATION_TYPE) continue;
-    bump(v.plate, v.destinationNumber, v.destinationType, v.createdAt);
+    bump(v.plate, v.destinationNumber, v.destinationType, { when: v.createdAt, hasParking: false, ongoing: false, durationMinutes: null });
   }
 
   return Array.from(byKey.values())
     .filter((v) => v.count >= minVisits)
-    .map((v) => ({ ...v, entries: v.entries.sort((a, b) => (toMillis(b) || 0) - (toMillis(a) || 0)) }))
+    .map((v) => ({ ...v, entries: v.entries.sort((a, b) => (toMillis(b.when) || 0) - (toMillis(a.when) || 0)) }))
     .sort((a, b) => b.count - a.count);
 }
 
